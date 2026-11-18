@@ -171,11 +171,29 @@ namespace DPT.Engine.Mathematics
                     (byte)(packed & 0xFF));
             }
 
-            if (value.Length == 8) return FromArgb(packed);
+            if (value.Length == 8)
+            {
+                // "#RRGGBBAA", the order ToHex writes. Reading it as AARRGGBB -
+                // which is the ARGB word layout used elsewhere in this type - was a
+                // real bug: a colour saved and reloaded came back with its alpha and
+                // red channels swapped.
+                return new ColorRgba(
+                    (byte)((packed >> 24) & 0xFF),
+                    (byte)((packed >> 16) & 0xFF),
+                    (byte)((packed >> 8) & 0xFF),
+                    (byte)(packed & 0xFF));
+            }
 
             return White;
         }
 
+        /// <summary>
+        /// Formats as "#RRGGBBAA".
+        ///
+        /// The alpha last, matching CSS and the order this method has always
+        /// written. <see cref="Parse"/> reads the same order, which is what makes a
+        /// saved project load back with the colour it was saved with.
+        /// </summary>
         public string ToHex()
         {
             return "#" + R.ToString("X2", CultureInfo.InvariantCulture) +

@@ -1,0 +1,1530 @@
+/* =====================================================================
+   DPT.Engine Editor -- theme and layout
+   Copyright (C) 2026 DartPower Team. GPLv2.
+
+   Everything visual is driven by custom properties so that a fork can
+   restyle the editor from Branding.cs alone: the C# host splices the
+   palette into the page and app.js pushes it onto <body> as inline
+   variables, which beat the body.light / body.dark / body.oled rules.
+
+   Two constraints shaped this file:
+
+     * MSHTML has no custom properties (IE8, and even IE11). Every rule
+       therefore carries a literal light-theme value first and the
+       variable second. Old browsers keep the literal, modern browsers
+       override it. The dark and OLED blocks at the bottom repeat the
+       same trick for the few structural surfaces, scoped to .no-vars so
+       they can never fight the variable-driven rules.
+
+     * The layout is absolute positioning, not flexbox or grid. IE8 has
+       neither, and the editor has to be usable inside the embedded
+       WebBrowser control on XP. Flexbox appears only inside small
+       widgets, where losing it is cosmetic.
+   ===================================================================== */
+
+/* ------------------------------------------------------------ tokens */
+
+body {
+    --font-ui: "Segoe UI", Tahoma, Verdana, Arial, sans-serif;
+    --font-mono: Consolas, "Lucida Console", "Courier New", monospace;
+
+    --radius: 3px;
+    --row: 22px;
+    --tl-gutter: 128px;
+    --tl-row: 26px;
+    --tl-toolbar: 34px;
+    --tl-ruler: 22px;
+}
+
+/* ------------------------------------------------------------ themes */
+
+/* Light is the default and the only finished design; the numbers are
+   Branding.GetPalette(Theme.Light) verbatim. */
+body.light {
+    --brand-primary: #0088FF;
+    --brand-primary2: #0080FF;
+    --brand-bg: #FFFFFF;
+    --brand-surface: #F2F6FB;
+    --brand-text: #0A1220;
+    --brand-border: #D9E3F0;
+    --brand-muted: #5C6B80;
+    --brand-hover: #E7F0FB;
+    --brand-sel: #0088FF;
+    --brand-sunken: #E9F0F8;
+    --brand-bar: #FFFFFF;
+    --brand-on-primary: #FFFFFF;
+}
+
+/* Dark keeps the intended #000088 accent, but a saturated navy on black
+   is nearly invisible, so --brand-sel is lifted for selection rings and
+   playhead. Branding.cs says the same thing in its own comment. */
+body.dark {
+    --brand-primary: #000088;
+    --brand-primary2: #0000AA;
+    --brand-bg: #000000;
+    --brand-surface: #07070F;
+    --brand-text: #E8ECF5;
+    --brand-border: #1A1A3C;
+    --brand-muted: #8B92B4;
+    --brand-hover: #101028;
+    --brand-sel: #3B3BD6;
+    --brand-sunken: #04040A;
+    --brand-bar: #0C0C18;
+    --brand-on-primary: #FFFFFF;
+}
+
+/* OLED is the placeholder slot from Branding.cs: true black everywhere
+   and the light-theme blue as the accent. */
+body.oled {
+    --brand-primary: #0088FF;
+    --brand-primary2: #0080FF;
+    --brand-bg: #000000;
+    --brand-surface: #000000;
+    --brand-text: #FFFFFF;
+    --brand-border: #1E1E1E;
+    --brand-muted: #9098A8;
+    --brand-hover: #0E0E0E;
+    --brand-sel: #0088FF;
+    --brand-sunken: #000000;
+    --brand-bar: #070707;
+    --brand-on-primary: #FFFFFF;
+}
+
+/* ------------------------------------------------------------ base */
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: "Segoe UI", Tahoma, Verdana, Arial, sans-serif;
+    font-size: 11px;
+    line-height: 1.35;
+    color: #0A1220;
+    background: #FFFFFF;
+    overflow: hidden;
+
+    /* The chrome is a tool, not a document: dragging a timeline bar must
+       not leave a blue text selection behind it. Inputs opt back in. */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+body,
+input,
+button,
+select,
+textarea {
+    font-family: "Segoe UI", Tahoma, Verdana, Arial, sans-serif;
+}
+
+input,
+textarea {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+}
+
+img {
+    border: 0;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.mono {
+    font-family: Consolas, "Lucida Console", "Courier New", monospace;
+}
+
+.dim {
+    color: #5C6B80;
+    color: var(--brand-muted);
+}
+
+.empty {
+    padding: 10px;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    font-style: italic;
+}
+
+/* Fixed-size chrome measures its border inside the stated height. Without
+   this every 1px divider steals a pixel from the region below it and the
+   panel borders show through as a hairline seam. IE8 needs the prefix. */
+.topbar,
+.statusbar,
+.timeline,
+.tl-toolbar,
+.tl-head,
+.tl-corner,
+.tl-gutter,
+.tl-grow,
+.tl-lane,
+.brand,
+.panel,
+.panel-head,
+.modal-box {
+    -ms-box-sizing: border-box;
+    box-sizing: border-box;
+}
+
+/* ------------------------------------------------------------ shell */
+
+.app {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    background: #FFFFFF;
+    background: var(--brand-bg);
+    color: #0A1220;
+    color: var(--brand-text);
+}
+
+/* ------------------------------------------------------------ top bar */
+
+.topbar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 58px;
+    background: #F2F6FB;
+    background: var(--brand-surface);
+    border-bottom: 1px solid #D9E3F0;
+    border-bottom-color: var(--brand-border);
+    white-space: nowrap;
+    overflow: hidden;
+    z-index: 40;
+}
+
+.brand {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 214px;
+    height: 57px;
+    border-right: 1px solid #D9E3F0;
+    border-right-color: var(--brand-border);
+}
+
+.brand-mark {
+    position: absolute;
+    left: 12px;
+    top: 13px;
+    width: 30px;
+    height: 30px;
+    line-height: 30px;
+    text-align: center;
+    border-radius: 3px;
+    font-weight: bold;
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    color: #FFFFFF;
+    background: #0080FF;
+    background: linear-gradient(135deg, #0088FF 0%, #0055CC 100%);
+}
+
+.brand-text {
+    position: absolute;
+    left: 50px;
+    top: 12px;
+}
+
+.brand-name {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    color: #0A1220;
+    color: var(--brand-text);
+}
+
+.brand-sub {
+    font-size: 9px;
+    letter-spacing: 1.4px;
+    color: #5C6B80;
+    color: var(--brand-muted);
+}
+
+.top-main {
+    position: absolute;
+    left: 222px;
+    right: 372px;
+    top: 0;
+    height: 57px;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.top-right {
+    position: absolute;
+    right: 10px;
+    top: 0;
+    height: 57px;
+    white-space: nowrap;
+}
+
+/* A labelled group in the top bar: tiny caption above a control. */
+.field {
+    display: inline-block;
+    vertical-align: middle;
+    margin: 9px 10px 0 0;
+}
+
+.field > label {
+    display: block;
+    font-size: 9px;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    margin-bottom: 2px;
+}
+
+.field .unit,
+.field .x {
+    color: #5C6B80;
+    color: var(--brand-muted);
+    padding: 0 2px;
+    font-size: 10px;
+}
+
+.transport {
+    display: inline-block;
+    vertical-align: middle;
+    margin-top: 12px;
+    border: 1px solid #D9E3F0;
+    border-color: var(--brand-border);
+    border-radius: 3px;
+    background: #FFFFFF;
+    background: var(--brand-bar);
+    height: 30px;
+    padding: 0 2px;
+}
+
+.tbtn {
+    width: 28px;
+    height: 26px;
+    margin: 1px;
+    border: 0;
+    border-radius: 2px;
+    background: transparent;
+    color: #0A1220;
+    color: var(--brand-text);
+    font-size: 12px;
+    line-height: 26px;
+    cursor: pointer;
+    vertical-align: top;
+}
+
+.tbtn:hover {
+    background: #E7F0FB;
+    background: var(--brand-hover);
+}
+
+.tbtn.on {
+    color: #FFFFFF;
+    background: #0088FF;
+    background: var(--brand-primary);
+}
+
+.frame-box {
+    display: inline-block;
+    vertical-align: top;
+    margin: 6px 6px 0 6px;
+    font-family: Consolas, "Lucida Console", "Courier New", monospace;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+}
+
+.top-right .ctl,
+.top-right .btn {
+    margin-top: 15px;
+}
+
+/* ------------------------------------------------------------ controls */
+
+.ctl {
+    height: 22px;
+    padding: 0 5px;
+    font-size: 11px;
+    color: #0A1220;
+    color: var(--brand-text);
+    background: #FFFFFF;
+    background: var(--brand-bar);
+    border: 1px solid #D9E3F0;
+    border-color: var(--brand-border);
+    border-radius: 3px;
+    outline: none;
+    vertical-align: middle;
+
+    /* width:100% inside the inspector is the common case; content-box would
+       add the 10px padding and 2px border on top and push the field past
+       the panel edge. */
+    -ms-box-sizing: border-box;
+    box-sizing: border-box;
+}
+
+.ctl:hover {
+    border-color: #B9C9DE;
+}
+
+.ctl:focus {
+    border-color: #0088FF;
+    border-color: var(--brand-primary);
+}
+
+.ctl.tiny {
+    width: 46px;
+}
+
+.ctl.mono {
+    font-family: Consolas, "Lucida Console", "Courier New", monospace;
+    font-size: 10px;
+}
+
+.top-main .ctl {
+    height: 24px;
+}
+
+select.ctl {
+    height: 24px;
+    padding: 0 2px;
+}
+
+.btn {
+    height: 24px;
+    padding: 0 10px;
+    font-size: 11px;
+    color: #0A1220;
+    color: var(--brand-text);
+    background: #FFFFFF;
+    background: var(--brand-bar);
+    border: 1px solid #D9E3F0;
+    border-color: var(--brand-border);
+    border-radius: 3px;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+.btn:hover {
+    background: #E7F0FB;
+    background: var(--brand-hover);
+}
+
+.btn:active {
+    border-color: #0080FF;
+    border-color: var(--brand-primary2);
+}
+
+.btn.primary {
+    color: #FFFFFF;
+    color: var(--brand-on-primary);
+    background: #0088FF;
+    background: var(--brand-primary);
+    border-color: #0080FF;
+    border-color: var(--brand-primary2);
+}
+
+.btn.primary:hover {
+    background: #0080FF;
+    background: var(--brand-primary2);
+}
+
+.mini {
+    width: 20px;
+    height: 20px;
+    line-height: 18px;
+    padding: 0;
+    font-size: 11px;
+    text-align: center;
+    border: 1px solid #D9E3F0;
+    border-color: var(--brand-border);
+    border-radius: 2px;
+    background: #FFFFFF;
+    background: var(--brand-bar);
+    color: #5C6B80;
+    color: var(--brand-muted);
+    cursor: pointer;
+}
+
+.mini:hover {
+    color: #C0392B;
+    border-color: #C0392B;
+}
+
+/* ------------------------------------------------------------ workspace */
+
+.workspace {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 58px;
+    bottom: 24px;
+}
+
+.panel {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: #F2F6FB;
+    background: var(--brand-surface);
+    color: #0A1220;
+    color: var(--brand-text);
+    overflow: hidden;
+}
+
+.panel-left {
+    left: 0;
+    width: 214px;
+    border-right: 1px solid #D9E3F0;
+    border-right-color: var(--brand-border);
+}
+
+.panel-right {
+    right: 0;
+    width: 286px;
+    border-left: 1px solid #D9E3F0;
+    border-left-color: var(--brand-border);
+}
+
+.panel-head {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 26px;
+    line-height: 26px;
+    padding: 0 8px;
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    border-bottom: 1px solid #D9E3F0;
+    border-bottom-color: var(--brand-border);
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.panel-head .mini {
+    float: right;
+    margin-top: 3px;
+}
+
+.panel-body {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 26px;
+    bottom: 0;
+    overflow: auto;
+}
+
+/* ------------------------------------------------------------ tree */
+
+.tree-row {
+    height: 22px;
+    line-height: 22px;
+    padding: 0 6px 0 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    cursor: pointer;
+    border-bottom: 1px solid transparent;
+}
+
+.tree-row:hover {
+    background: #E7F0FB;
+    background: var(--brand-hover);
+}
+
+.tree-row.sel {
+    background: #0088FF;
+    background: var(--brand-sel);
+    color: #FFFFFF;
+}
+
+.tree-row.sel .tree-id,
+.tree-row.sel .tree-kind,
+.tree-row.sel .twisty {
+    color: #FFFFFF;
+}
+
+.tree-row.scene {
+    font-weight: 600;
+}
+
+.twisty {
+    display: inline-block;
+    width: 12px;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    text-align: center;
+    cursor: pointer;
+}
+
+.glyph {
+    display: inline-block;
+    width: 14px;
+    text-align: center;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    font-size: 10px;
+}
+
+.tree-name {
+    display: inline-block;
+    vertical-align: top;
+    max-width: 118px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tree-id {
+    float: right;
+    font-family: Consolas, "Lucida Console", "Courier New", monospace;
+    font-size: 9px;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    padding-left: 6px;
+}
+
+.tree-kind {
+    font-size: 9px;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    padding-left: 4px;
+}
+
+.tree-sep {
+    height: 1px;
+    margin: 4px 0;
+    background: #D9E3F0;
+    background: var(--brand-border);
+}
+
+/* ------------------------------------------------------------ stage */
+
+.stage {
+    position: absolute;
+    left: 214px;
+    right: 286px;
+    top: 0;
+    bottom: 0;
+    background: #FFFFFF;
+    background: var(--brand-bg);
+}
+
+.preview-wrap {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 320px;
+    padding: 14px;
+}
+
+.preview-frame {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    top: 14px;
+    bottom: 14px;
+    background: #0B0E14;
+    border: 1px solid #D9E3F0;
+    border-color: var(--brand-border);
+    overflow: hidden;
+}
+
+#preview {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.preview-hud {
+    position: absolute;
+    left: 22px;
+    right: 22px;
+    top: 20px;
+    font-family: Consolas, "Lucida Console", "Courier New", monospace;
+    font-size: 10px;
+    color: #7E8AA2;
+    pointer-events: none;
+}
+
+.preview-hud .hud-right {
+    float: right;
+    color: #4E5A70;
+}
+
+.preview-hud .hud-left {
+    float: left;
+}
+
+.preview-note {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 6px;
+    text-align: center;
+    font-size: 9px;
+    letter-spacing: 0.6px;
+    color: #4E5A70;
+    pointer-events: none;
+}
+
+/* ------------------------------------------------------------ timeline */
+
+.timeline {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 320px;
+    background: #F2F6FB;
+    background: var(--brand-surface);
+    border-top: 1px solid #D9E3F0;
+    border-top-color: var(--brand-border);
+}
+
+.tl-toolbar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 34px;
+    line-height: 34px;
+    padding: 0 8px;
+    border-bottom: 1px solid #D9E3F0;
+    border-bottom-color: var(--brand-border);
+    white-space: nowrap;
+}
+
+.tl-toolbar .btn {
+    height: 22px;
+    margin-top: 5px;
+}
+
+.tl-title {
+    display: inline-block;
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    margin-left: 10px;
+}
+
+.tl-frame {
+    float: right;
+    font-family: Consolas, "Lucida Console", "Courier New", monospace;
+    font-size: 11px;
+    color: #0A1220;
+    color: var(--brand-text);
+}
+
+.tl-frame .dim {
+    font-size: 10px;
+}
+
+.menu-wrap {
+    position: relative;
+    display: inline-block;
+}
+
+.menu {
+    position: absolute;
+    left: 0;
+    top: 26px;
+    width: 230px;
+    padding: 4px;
+    background: #FFFFFF;
+    background: var(--brand-bar);
+    border: 1px solid #B9C9DE;
+    border-color: var(--brand-border);
+    border-radius: 3px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+    z-index: 60;
+    white-space: normal;
+}
+
+.menu-item {
+    display: block;
+    width: 100%;
+    padding: 5px 7px;
+    border: 0;
+    border-radius: 2px;
+    background: transparent;
+    text-align: left;
+    color: #0A1220;
+    color: var(--brand-text);
+    cursor: pointer;
+    font-size: 11px;
+}
+
+.menu-item:hover {
+    background: #E7F0FB;
+    background: var(--brand-hover);
+}
+
+.menu-item .mi-type {
+    float: right;
+    font-family: Consolas, "Lucida Console", "Courier New", monospace;
+    font-size: 9px;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    padding-top: 1px;
+}
+
+.menu-item .mi-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 7px;
+    border-radius: 2px;
+    vertical-align: middle;
+}
+
+.menu-head {
+    padding: 4px 7px 6px 7px;
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    border-bottom: 1px solid #D9E3F0;
+    border-bottom-color: var(--brand-border);
+    margin-bottom: 3px;
+}
+
+.tl-main {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 34px;
+    bottom: 0;
+}
+
+.tl-head {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 22px;
+    border-bottom: 1px solid #D9E3F0;
+    border-bottom-color: var(--brand-border);
+}
+
+.tl-corner {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 128px;
+    padding: 0 6px;
+    line-height: 21px;
+    font-size: 9px;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    border-right: 1px solid #D9E3F0;
+    border-right-color: var(--brand-border);
+    overflow: hidden;
+}
+
+.tl-ruler-wrap {
+    position: absolute;
+    left: 128px;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    overflow: hidden;
+}
+
+.tl-ruler {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    cursor: ew-resize;
+}
+
+.tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    border-left: 1px solid #D9E3F0;
+    border-left-color: var(--brand-border);
+    font-size: 0;
+}
+
+.tick.minor {
+    top: 12px;
+    border-left-color: #E9F0F8;
+    border-left-color: var(--brand-border);
+    opacity: 0.6;
+}
+
+.tick span {
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    font-family: Consolas, "Lucida Console", "Courier New", monospace;
+    font-size: 9px;
+    line-height: 10px;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    white-space: nowrap;
+}
+
+.tl-scroll {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 22px;
+    bottom: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: #E9F0F8;
+    background: var(--brand-sunken);
+}
+
+.tl-gutter {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 128px;
+    border-right: 1px solid #D9E3F0;
+    border-right-color: var(--brand-border);
+}
+
+.tl-grow {
+    height: 26px;
+    line-height: 25px;
+    padding: 0 6px;
+    border-bottom: 1px solid #D9E3F0;
+    border-bottom-color: var(--brand-border);
+    white-space: nowrap;
+    overflow: hidden;
+    cursor: pointer;
+    background: #F2F6FB;
+    background: var(--brand-surface);
+}
+
+.tl-grow:hover {
+    background: #E7F0FB;
+    background: var(--brand-hover);
+}
+
+.tl-grow.sel {
+    background: #DCEBFC;
+    background: var(--brand-hover);
+    box-shadow: inset 2px 0 0 #0088FF;
+    box-shadow: inset 2px 0 0 var(--brand-sel);
+}
+
+.tl-grow .g-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 6px;
+    border-radius: 2px;
+    vertical-align: middle;
+}
+
+.tl-grow .g-name {
+    font-size: 10px;
+}
+
+.tl-grow .g-num {
+    float: right;
+    font-family: Consolas, "Lucida Console", "Courier New", monospace;
+    font-size: 9px;
+    color: #5C6B80;
+    color: var(--brand-muted);
+}
+
+.tl-lanes {
+    position: relative;
+    margin-left: 128px;
+}
+
+.tl-lane {
+    position: relative;
+    height: 26px;
+    border-bottom: 1px solid #D9E3F0;
+    border-bottom-color: var(--brand-border);
+    overflow: hidden;
+    cursor: default;
+}
+
+.tl-lane.alt {
+    background: rgba(0, 0, 0, 0.015);
+}
+
+.tl-bar {
+    position: absolute;
+    top: 3px;
+    height: 20px;
+    /* Border-box so left/width map exactly to the frame span: with the
+       default model a 2px border would push the bar 2px past its own end. */
+    -ms-box-sizing: border-box;
+    box-sizing: border-box;
+    border-radius: 3px;
+    border: 1px solid rgba(0, 0, 0, 0.28);
+    cursor: move;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 10px;
+    line-height: 18px;
+    color: #FFFFFF;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+    /* Flat colour first: IE8 has no gradients and a transparent bar would
+       be invisible against the lane. */
+    background-color: #0088FF;
+    background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.30), rgba(255, 255, 255, 0));
+}
+
+.tl-bar .bar-label {
+    padding: 0 7px;
+    pointer-events: none;
+}
+
+.tl-bar.sel {
+    outline: 2px solid #FFFFFF;
+    outline-offset: -2px;
+    border-color: rgba(255, 255, 255, 0.9);
+    z-index: 5;
+}
+
+.tl-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: ew-resize;
+    background: rgba(255, 255, 255, 0.001);
+}
+
+.tl-handle:hover {
+    background: rgba(255, 255, 255, 0.35);
+}
+
+.tl-handle.l {
+    left: 0;
+}
+
+.tl-handle.r {
+    right: 0;
+}
+
+.tl-playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: #0088FF;
+    background: var(--brand-sel);
+    z-index: 30;
+    pointer-events: none;
+}
+
+.ph-head {
+    position: absolute;
+    left: -5px;
+    top: 0;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 7px solid #0088FF;
+    border-top-color: var(--brand-sel);
+}
+
+.tl-empty {
+    padding: 18px;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    font-style: italic;
+}
+
+/* ------------------------------------------------------------ inspector */
+
+.inspector {
+    padding: 0 0 24px 0;
+}
+
+.sec {
+    border-bottom: 1px solid #D9E3F0;
+    border-bottom-color: var(--brand-border);
+}
+
+.sec-head {
+    height: 22px;
+    line-height: 22px;
+    padding: 0 8px;
+    background: #E9F0F8;
+    background: var(--brand-sunken);
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #5C6B80;
+    color: var(--brand-muted);
+}
+
+.sec-body {
+    padding: 4px 8px 8px 8px;
+}
+
+.irow {
+    padding: 2px 0;
+}
+
+/* The label floats, so the row needs a clear. zoom:1 gives IE8 its own
+   hasLayout clear without a pseudo element. */
+.irow:after {
+    content: "";
+    display: block;
+    clear: both;
+}
+
+.irow {
+    zoom: 1;
+}
+
+.ilabel {
+    float: left;
+    width: 96px;
+    padding-top: 3px;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.icell {
+    margin-left: 98px;
+}
+
+.icell .ctl {
+    width: 100%;
+}
+
+.ihint {
+    padding-top: 2px;
+    font-size: 9px;
+    color: #5C6B80;
+    color: var(--brand-muted);
+}
+
+.clearfix:after {
+    content: "";
+    display: block;
+    clear: both;
+}
+
+/* A vector or quaternion: four small boxes, no labels on the components
+   to keep the panel narrow. */
+.quad {
+    margin-left: -3px;
+}
+
+.quad .q {
+    display: inline-block;
+    width: 33px;
+    margin-left: 3px;
+    padding: 0 3px;
+    height: 21px;
+    font-family: Consolas, "Lucida Console", "Courier New", monospace;
+    font-size: 10px;
+    text-align: right;
+    color: #0A1220;
+    color: var(--brand-text);
+    background: #FFFFFF;
+    background: var(--brand-bar);
+    border: 1px solid #D9E3F0;
+    border-color: var(--brand-border);
+    border-radius: 2px;
+    -ms-box-sizing: border-box;
+    box-sizing: border-box;
+}
+
+.quad.wide .q {
+    width: 51px;
+}
+
+.quad .q:focus {
+    outline: none;
+    border-color: #0088FF;
+    border-color: var(--brand-primary);
+}
+
+.colctl {
+    white-space: nowrap;
+}
+
+/* The swatch is painted by app.js with a solid rgba() value: a
+   checkerboard behind it would need a second element and would fight the
+   inline colour, so alpha is shown by the hex text instead. */
+.colctl .swatch {
+    display: inline-block;
+    vertical-align: middle;
+    width: 20px;
+    height: 20px;
+    margin-right: 4px;
+    border: 1px solid #B9C9DE;
+    border-color: var(--brand-border);
+    border-radius: 2px;
+    background: #FFFFFF;
+}
+
+.colctl .ctl {
+    width: 86px;
+}
+
+.colctl input[type="color"] {
+    width: 24px;
+    height: 22px;
+    padding: 0;
+    margin-left: 4px;
+    border: 1px solid #D9E3F0;
+    border-color: var(--brand-border);
+    background: transparent;
+    vertical-align: middle;
+    cursor: pointer;
+}
+
+.check {
+    margin-top: 4px;
+}
+
+.note {
+    padding: 6px 8px;
+    margin: 4px 0;
+    font-size: 10px;
+    line-height: 1.5;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    background: #E9F0F8;
+    background: var(--brand-sunken);
+    border-left: 2px solid #0088FF;
+    border-left-color: var(--brand-primary);
+}
+
+.kv {
+    padding: 2px 0;
+    font-size: 10px;
+    color: #5C6B80;
+    color: var(--brand-muted);
+}
+
+.kv .k {
+    display: inline-block;
+    width: 96px;
+}
+
+.kv .v {
+    font-family: Consolas, "Lucida Console", "Courier New", monospace;
+    color: #0A1220;
+    color: var(--brand-text);
+}
+
+/* ------------------------------------------------------------ status bar */
+
+.statusbar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 24px;
+    line-height: 23px;
+    padding: 0 10px;
+    background: #F2F6FB;
+    background: var(--brand-surface);
+    border-top: 1px solid #D9E3F0;
+    border-top-color: var(--brand-border);
+    font-size: 10px;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.statusbar .sb-right {
+    float: right;
+    font-family: Consolas, "Lucida Console", "Courier New", monospace;
+    font-size: 9px;
+}
+
+.status-ok {
+    color: #1E7A4B;
+}
+
+.status-err {
+    color: #C0392B;
+}
+
+/* ------------------------------------------------------------ toast */
+
+.toast {
+    position: absolute;
+    left: 50%;
+    bottom: 42px;
+    margin-left: -160px;
+    width: 320px;
+    padding: 8px 12px;
+    text-align: center;
+    border-radius: 3px;
+    background: #0A1220;
+    color: #FFFFFF;
+    font-size: 11px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    z-index: 200;
+    opacity: 0;
+    -webkit-transition: opacity 0.18s linear;
+    transition: opacity 0.18s linear;
+}
+
+.toast.show {
+    opacity: 1;
+}
+
+.toast.err {
+    background: #8E2018;
+}
+
+/* ------------------------------------------------------------ modal */
+
+.modal {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 300;
+}
+
+.modal-box {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 620px;
+    height: 420px;
+    margin-left: -310px;
+    margin-top: -210px;
+    background: #FFFFFF;
+    background: var(--brand-bg);
+    border: 1px solid #B9C9DE;
+    border-color: var(--brand-border);
+    border-radius: 4px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4);
+}
+
+.modal-head {
+    height: 30px;
+    line-height: 30px;
+    padding: 0 10px;
+    font-size: 10px;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: #5C6B80;
+    color: var(--brand-muted);
+    border-bottom: 1px solid #D9E3F0;
+    border-bottom-color: var(--brand-border);
+}
+
+.modal-body {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    top: 40px;
+    bottom: 46px;
+}
+
+.modal-body textarea {
+    width: 100%;
+    height: 100%;
+    padding: 6px;
+    font-family: Consolas, "Lucida Console", "Courier New", monospace;
+    font-size: 10px;
+    line-height: 1.45;
+    color: #0A1220;
+    color: var(--brand-text);
+    background: #F2F6FB;
+    background: var(--brand-surface);
+    border: 1px solid #D9E3F0;
+    border-color: var(--brand-border);
+    border-radius: 3px;
+    resize: none;
+    outline: none;
+    -ms-box-sizing: border-box;
+    box-sizing: border-box;
+}
+
+.modal-foot {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    text-align: right;
+}
+
+/* ------------------------------------------------------------ scrollbars */
+
+.tl-scroll::-webkit-scrollbar,
+.panel-body::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.tl-scroll::-webkit-scrollbar-track,
+.panel-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.tl-scroll::-webkit-scrollbar-thumb,
+.panel-body::-webkit-scrollbar-thumb {
+    background: #C4D2E4;
+    border-radius: 5px;
+}
+
+/* =====================================================================
+   No-custom-property fallback.
+
+   app.js probes for CSS variable support and adds .no-vars to <html>
+   only when the probe fails. These rules therefore never apply in a
+   browser that understands the blocks above, so they cannot fight the
+   branding overrides. Only the two non-default themes need entries:
+   light is already the literal value written into every rule.
+   ===================================================================== */
+
+.no-vars body.dark,
+.no-vars body.oled {
+    background: #000000;
+    color: #E8ECF5;
+}
+
+.no-vars body.oled {
+    color: #FFFFFF;
+}
+
+.no-vars body.dark .app,
+.no-vars body.oled .app {
+    background: #000000;
+    color: #E8ECF5;
+}
+
+.no-vars body.oled .app {
+    color: #FFFFFF;
+}
+
+.no-vars body.dark .topbar,
+.no-vars body.dark .panel,
+.no-vars body.dark .timeline,
+.no-vars body.dark .statusbar,
+.no-vars body.dark .tl-grow,
+.no-vars body.dark .sec-head {
+    background: #07070F;
+    border-color: #1A1A3C;
+}
+
+.no-vars body.oled .topbar,
+.no-vars body.oled .panel,
+.no-vars body.oled .timeline,
+.no-vars body.oled .statusbar,
+.no-vars body.oled .tl-grow,
+.no-vars body.oled .sec-head {
+    background: #000000;
+    border-color: #1E1E1E;
+}
+
+.no-vars body.dark .ctl,
+.no-vars body.dark .btn,
+.no-vars body.dark .transport,
+.no-vars body.dark .menu,
+.no-vars body.dark .quad .q,
+.no-vars body.dark .tbtn,
+.no-vars body.dark .mini {
+    background: #0C0C18;
+    border-color: #1A1A3C;
+    color: #E8ECF5;
+}
+
+.no-vars body.oled .ctl,
+.no-vars body.oled .btn,
+.no-vars body.oled .transport,
+.no-vars body.oled .menu,
+.no-vars body.oled .quad .q,
+.no-vars body.oled .tbtn,
+.no-vars body.oled .mini {
+    background: #070707;
+    border-color: #1E1E1E;
+    color: #FFFFFF;
+}
+
+.no-vars body.dark .tl-scroll,
+.no-vars body.dark .stage,
+.no-vars body.dark .note,
+.no-vars body.dark .modal-box {
+    background: #04040A;
+    border-color: #1A1A3C;
+}
+
+.no-vars body.oled .tl-scroll,
+.no-vars body.oled .stage,
+.no-vars body.oled .note,
+.no-vars body.oled .modal-box {
+    background: #000000;
+    border-color: #1E1E1E;
+}
+
+.no-vars body.dark .dim,
+.no-vars body.dark .ilabel,
+.no-vars body.dark .kv,
+.no-vars body.dark .ihint,
+.no-vars body.dark .tl-corner,
+.no-vars body.dark .panel-head,
+.no-vars body.dark .tl-title,
+.no-vars body.dark .sec-head {
+    color: #8B92B4;
+}
+
+.no-vars body.oled .dim,
+.no-vars body.oled .ilabel,
+.no-vars body.oled .kv,
+.no-vars body.oled .ihint,
+.no-vars body.oled .tl-corner,
+.no-vars body.oled .panel-head,
+.no-vars body.oled .tl-title,
+.no-vars body.oled .sec-head {
+    color: #9098A8;
+}
+
+.no-vars body.dark .tl-lane,
+.no-vars body.dark .tl-grow,
+.no-vars body.dark .sec,
+.no-vars body.dark .irow {
+    border-color: #1A1A3C;
+}
+
+.no-vars body.oled .tl-lane,
+.no-vars body.oled .tl-grow,
+.no-vars body.oled .sec,
+.no-vars body.oled .irow {
+    border-color: #1E1E1E;
+}

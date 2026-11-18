@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>DPT.Engine Editor</title>
+<!--
+  DPT.Engine Editor -- page skeleton.
+  Copyright (C) 2026 DartPower Team. GPLv2.
+
+  This file is a template, not a finished page. The C# host reads it,
+  replaces the three placeholders below and writes one self-contained
+  document, so the editor works from a single file with no adjacent
+  assets and no network access:
+
+      style placeholder    <- Assets/theme.css
+      branding placeholder <- window.DPT_BRANDING = {...} (see below)
+      script placeholder   <- Assets/app.js
+
+  Placeholder strings are written with their comment delimiters intact,
+  because the host does a literal string replace and does not parse HTML
+  or CSS to find them.
+
+  The page also runs unchanged when the files are opened directly from
+  disk for development: theme.css and app.js simply have to be pasted in,
+  and app.js falls back to its own copy of the palette when no branding
+  object is present.
+
+  Branding object the host may splice (all fields optional):
+
+      window.DPT_BRANDING = {
+          "name":    "DPT.Engine",
+          "version": "1.0.0",
+          "title":   "DPT.Engine v1.0.0",
+          "tagline": "A Win32 + Direct3D 9 demo engine with a web editor",
+          "palette": {
+              "light": { "primary": "#0088FF", "primary2": "#0080FF",
+                         "bg": "#FFFFFF", "surface": "#F2F6FB", "text": "#0A1220" },
+              "dark":  { ... },
+              "oled":  { ... }
+          }
+      };
+
+  Anything missing falls back to the values in theme.css, which are the
+  constants in Branding.cs.
+-->
+<style type="text/css">
+/*__STYLE__*/
+</style>
+</head>
+<body class="light">
+
+<div class="app" id="app">
+
+  <!-- ======================================================== top bar -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">DPT</div>
+      <div class="brand-text">
+        <div class="brand-name" id="brandName">DPT.Engine</div>
+        <div class="brand-sub" id="brandSub">EDITOR</div>
+      </div>
+    </div>
+
+    <div class="top-main">
+      <div class="field">
+        <label for="projName">Project</label>
+        <input id="projName" class="ctl" type="text" size="18" spellcheck="false" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Resolution</label>
+        <input id="projW" class="ctl tiny" type="text" autocomplete="off">
+        <span class="x">&#215;</span>
+        <input id="projH" class="ctl tiny" type="text" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="projFps">FPS</label>
+        <input id="projFps" class="ctl tiny" type="text" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="projDur">Length</label>
+        <input id="projDur" class="ctl tiny" type="text" autocomplete="off">
+        <span class="unit">f</span>
+      </div>
+
+      <div class="transport">
+        <button type="button" id="btnPlay" class="tbtn" title="Play / pause (Space)">&#9654;</button>
+        <button type="button" id="btnStop" class="tbtn" title="Stop and rewind">&#9632;</button>
+        <span class="frame-box"><span id="frameNow">0</span><span class="dim"> / <span id="frameTotal">0</span></span></span>
+      </div>
+    </div>
+
+    <div class="top-right">
+      <select id="themeSel" class="ctl" title="Theme">
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+        <option value="oled">OLED</option>
+      </select>
+      <button type="button" id="btnNew" class="btn" title="New project">New</button>
+      <button type="button" id="btnOpen" class="btn" title="Open a .dptproj file">Open</button>
+      <button type="button" id="btnSave" class="btn primary" title="Save (Ctrl+S)">Save</button>
+      <button type="button" id="btnDownload" class="btn" title="Download .dptproj">Download</button>
+    </div>
+  </div>
+
+  <!-- ====================================================== workspace -->
+  <div class="workspace">
+
+    <!-- ------------------------------------------------ scene tree -->
+    <div class="panel panel-left">
+      <div class="panel-head">Scene tree</div>
+      <div class="panel-body" id="treeBody">
+        <div id="tree"></div>
+      </div>
+    </div>
+
+    <!-- ------------------------------------------------ centre stage -->
+    <div class="stage">
+      <div class="preview-wrap">
+        <div class="preview-frame" id="previewFrame">
+          <canvas id="preview"></canvas>
+          <div class="preview-hud">
+            <span class="hud-left" id="hudLeft">FRAME 0</span>
+            <span class="hud-right" id="hudRight">LAYOUT PREVIEW</span>
+          </div>
+          <div class="preview-note" id="previewNote">Schematic composite &mdash; not a render</div>
+        </div>
+      </div>
+
+      <!-- ---------------------------------------------- timeline -->
+      <div class="timeline">
+        <div class="tl-toolbar">
+          <span class="menu-wrap">
+            <button type="button" id="btnAdd" class="btn">+ Add effect</button>
+            <div id="addMenu" class="menu hidden">
+              <div class="menu-head">Effect type</div>
+            </div>
+          </span>
+          <span class="tl-title" id="tlTitle">Timeline</span>
+          <span class="tl-frame">
+            <span class="dim">frame</span> <span id="tlFrame">0</span>
+            <span class="dim">of</span> <span id="tlTotal">0</span>
+          </span>
+        </div>
+
+        <div class="tl-main">
+          <div class="tl-head">
+            <div class="tl-corner">Effects</div>
+            <div class="tl-ruler-wrap">
+              <div class="tl-ruler" id="tlRuler"></div>
+            </div>
+          </div>
+          <div class="tl-scroll" id="tlScroll">
+            <div class="tl-gutter" id="tlGutter"></div>
+            <div class="tl-lanes" id="tlLanes"></div>
+          </div>
+          <div class="tl-playhead" id="tlPlayhead"><div class="ph-head"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ------------------------------------------------ inspector -->
+    <div class="panel panel-right">
+      <div class="panel-head">
+        <button type="button" id="btnDelete" class="mini hidden" title="Delete selected effect (Delete)">&#10005;</button>
+        <span id="inspectorTitle">Project</span>
+      </div>
+      <div class="panel-body">
+        <div id="inspector" class="inspector"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===================================================== status bar -->
+  <div class="statusbar">
+    <span class="sb-right" id="statusRight"></span>
+    <span id="status">Ready.</span>
+  </div>
+
+  <!-- hidden file picker for Open -->
+  <input type="file" id="fileInput" class="hidden" accept=".dptproj,.json,application/json">
+
+  <div id="toast" class="toast"></div>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-head" id="modalTitle">Project JSON</div>
+      <div class="modal-body">
+        <textarea id="modalText" spellcheck="false" readonly></textarea>
+      </div>
+      <div class="modal-foot">
+        <button type="button" id="modalClose" class="btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!--
+  Branding tokens. The host replaces the comment below with an
+  assignment to window.DPT_BRANDING; without it app.js uses the palette
+  from Branding.cs that is already baked into theme.css.
+-->
+<script type="text/javascript">
+/*__BRANDING__*/
+</script>
+
+<script type="text/javascript">
+/*__SCRIPT__*/
+</script>
+
+</body>
+</html>

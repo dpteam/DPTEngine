@@ -1,0 +1,219 @@
+# Troubleshooting
+
+Every entry here is a real failure found while porting the engine, with the cause and the fix
+that is now in the code. If you hit one of these again, the fix has regressed.
+
+Where to look first:
+
+| Thing | Location |
+| --- | --- |
+| Log file | `dptengine.log` in the data directory (exe folder, or `%APPDATA%\DPTEngine`) |
+| Log archives | `dptengine.log.1` .. `.3`, 4 MB each |
+| Crash reports | `Crashes\crash-yyyyMMdd-HHmmss.txt` in the data directory |
+| Screenshots | `Screenshots\dptengine-yyyyMMdd-HHmmss.bmp` |
+| Headless frames | `Screenshots\headless-<frame>.bmp` |
+| Shader cache | `ShaderCache\<hash>.dptshader` |
+| Subsystem state | The overlay, shown when anything is not `Running`; also in every crash report |
+
+The data directory is the executable's folder when it is writable, otherwise
+`%APPDATA%\DPTEngine`. The runtime logs the resolved path at start-up.
+
+## Device lost on alt-tab
+
+**Symptom.** Alt-tab out of a full-screen demo and back: the window is black or frozen, the
+frame counter stops, sometimes nothing is logged at all.
+
+**Cause.** Direct3D 9 loses the device whenever it cannot own the display: alt-tab from full
+screen, a driver update, a resolution change, a remote session attach. Every call then returns
+`D3DERR_DEVICELOST` until the device is reset, and the default-pool resources (render targets,
+the depth-stencil, dynamic buffers) no longer exist.
+
+**Fix.** A lost device is treated as normal, not as an error:
+
+* `D3D9Device.Check` sets a `lost` flag and returns on `D3DERR_DEVICELOST` /
+  `D3DERR_DEVICENOTRESET` instead of throwing, so the fault guard never sees it.
+* `EngineApp.RenderFrame` calls `CheckDevice` first and goes to `RecoverDevice` when it fails.
+* `RecoverDevice` polls `TestCooperativeLevel` for up to five seconds, releases the text cache,
+  the player and the renderer's device resources, calls `Reset`, then rebuilds shaders, quads and
+  render targets.
+* `Reset` invalidates the render-state cache, because the driver forgets everything at that
+  point.
+
+If you add a new device-owned resource, it must be released in `ReleaseDeviceResources` and
+recreated in `RestoreDeviceResources`, or the first alt-tab turns it into a stale handle and an
+access violation.
+
+## Readback wedges the driver (one shot per device)
+
+**Symptom.** The first screenshot of a run works. The second hangs the process with no error, no
+crash and no CPU use. The first headless run hung at frame nine, inside `LockRect`.
+
+**Cause.** Two driver-level problems, both on WDDM (Vista and later):
+
+1. `LockRect` on the back buffer blocks until the GPU is done presenting. Under load that vblank
+   may never arrive, and the wait is in kernel mode, so it cannot be timed out.
+2. `GetRenderTargetData` is documented to synchronise but does not when the device has a deep
+   queue. Worse, the second `GetRenderTargetData` of a process on the driver this was developed
+   against wedges inside the driver, holding the device's internal lock. A Direct3D 9 device is
+   not thread-safe, so a watchdog thread cannot recover it: the next call on any thread blocks
+   forever.
+
+**Fix.** Readback is a one-shot diagnostic:
+
+* the first read copies into a system-memory surface (`CreateOffscreenPlainSurface`,
+  `Pool.SystemMem`), locks that with `D3DLOCK_DONOTWAIT` and retries against a deadline, and
+  copies row by row honouring the pitch;
+* the copy is preceded by an event-query flush (`Flush`), because a blocking
+  `GetRenderTargetData` on a deep queue is the deadlock;
+* any further read on the same device returns an empty array immediately;
+* a failed or timed-out read disables readback for the session instead of retrying.
+
+Consequences: F12 saves one screenshot per run, and the headless verification checks pixels on
+one frame and every other frame structurally (effects ran, nothing threw). The render path itself
+never reads back.
+
+`DPT_FRESH_READBACK=1` in the environment makes the staging surface be recreated for each read
+instead of reused. It is a debugging aid for investigating the driver bug; it does not bypass the
+one-shot rule.
+
+## A render target bound as a texture crashes
+
+**Symptom.** The first frame that composites a post-process crashes inside the driver, or the
+draw silently produces nothing. The blur and feedback effects bound their own slot as a shader
+input and then copied the frame into it.
+
+**Cause.** Direct3D 9 forbids a surface from being a render target and a shader input at the same
+time. Several drivers treat the combination as undefined behaviour rather than returning an error.
+
+**Fix.** `D3D9Device.SetRenderTarget` and both `StretchRect` wrappers unbind samplers 0 and 1
+before touching the target, and `TimelinePlayer.PresentFrameToWindow` unbinds the frame buffer
+again after the final blit. `ReadSurface` unbinds as well, because `GetRenderTargetData` refuses a
+source that is still bound to the device.
+
+If you add an effect, unbind before you rebind.
+
+## Depth-stencil size mismatch with an off-screen target
+
+**Symptom.** The project renders into a 1024x768 buffer but only the top-left 512x384 corner
+shows content; everything else is the clear colour. Or the picture is correct in a 512x384 window
+and clipped at any other size.
+
+**Cause.** The auto depth-stencil created with the device belongs to the swap chain and is the
+window's size. Rendering into a larger off-screen target while that depth buffer stays bound means
+every pixel outside the window's rectangle fails the depth test and is discarded.
+
+**Fix.** `SetRenderTarget` binds a depth-stencil that matches the target: the swap chain's own
+surface for the back buffer, a cached `D24S8` surface created per size for off-screen targets.
+If the driver refuses the depth surface, the call logs a warning and continues without depth: the
+2D passes do not need it and a machine that cannot provide one still renders.
+
+Related: `SceneRenderer` deliberately does not set the viewport. The caller owns it, because a 3D
+effect renders into its own rectangle of the project buffer. Setting it to the window size made
+every 3D effect draw into the top-left corner.
+
+## Shader compilation failures
+
+**Symptom.** `Shader 'posnormaltex' (main, vs_2_0) failed to compile: ...` in the log, followed by
+`Falling back to fixed-function rendering`.
+
+### `row_major`
+
+HLSL matrices default to `column_major`. The CPU side is row-vector, `v * M`, so a matrix uploaded
+unchanged arrives transposed and the whole scene collapses into a corner or disappears. Every
+matrix declaration in `ShaderLibrary` carries the qualifier:
+
+```hlsl
+row_major float4x4 Projection : register(c0);
+```
+
+If you add a shader, add the qualifier. The symptom of forgetting it is not an error, just wrong
+geometry.
+
+### Reserved words
+
+The blur shader originally named its offset `step`, which shadows the HLSL intrinsic of the same
+name and fails to compile with a message that points at the wrong line. It is now `offset`. Other
+names to avoid in these shaders: `saturate`, `lerp`, `frac`, `clip`, `sample`, `linear`, `point`,
+`matrix`, `vector`, `texture`, `sampler`.
+
+### General checklist
+
+* Target is `vs_2_0` / `ps_2_0` on purpose. `ps_3_0` would drop the low-end hardware this engine
+  targets for no visual gain here.
+* Constant registers are fixed and shared with `D3D9.Registers`: vertex `c0..c3` projection,
+  `c4..c7` view, `c8..c11` world, `c12..c15` texture transform, `c16` fog range; pixel `c0` global
+  colour, `c1` and `c2` effect parameters.
+* Compiled bytecode is cached in memory and in `ShaderCache\`, keyed by a hash of name, entry
+  point, target and source. Editing a shader invalidates exactly one entry. If you change a
+  shader and see the old result, delete `ShaderCache\`.
+* `ShaderCompiler.ClearCache()` drops both caches.
+
+## Missing d3dcompiler DLLs
+
+**Symptom.** In the log: `No d3dcompiler_*.dll found; shaders cannot be compiled and the engine
+will use the fixed-function fallback.` The subsystem table shows `shader: Failed`. Geometry still
+draws, textures still draw, but environment mapping, the blur, feedback and contrast shaders and
+the fog shader are gone.
+
+**Cause.** Shaders are HLSL source compiled at start-up. `ShaderCompiler` tries
+`d3dcompiler_47.dll` down to `33.dll` via `LoadLibrary`, then `GetProcAddress("D3DCompile")`. On
+Vista and later one ships with Windows; on XP one is present as soon as any Direct3D 9 game has
+been installed, which is the same precondition Direct3D 9 itself has. A bare XP install has none.
+
+**Fix.** Install the DirectX 9.0c runtime (the June 2010 redistributable), or drop the matching
+`d3dcompiler_43.dll` beside the executable. 43 is the last version that supports the D3D9-era
+shader models without a separate redistributable.
+
+The engine is designed to keep running without a compiler, so this is a degradation, not a
+failure to start. The renderer marks itself `Degraded`, not `Failed`.
+
+## The engine starts, then exits immediately
+
+**Symptom.** A window flashes and the process ends with exit code 1.
+
+**Cause and fix.** Read the log and the newest crash report. The common cases:
+
+* The project file does not exist: an error line on stderr and a log line name the path, then the
+  built-in template plays instead.
+* The project is not valid JSON: `InvalidDataException: The project file is not valid JSON`, then
+  the template plays.
+* No Direct3D 9 device at all: `Direct3DCreate9 returned null` or
+  `IDirect3D9::CreateDevice failed for every device type`. Nothing can render; check the display
+  driver and whether the session has 3D acceleration (RDP without acceleration has none).
+
+`SetErrorMode` is set at start-up so a native fault does not block on the Windows "stopped
+working" dialog. Without it the process appears to hang, the crash handler never runs and no
+report is written.
+
+## Crash reports
+
+`FaultGuard.InstallCrashHandler(null)` is called first thing in `EngineApp.Run` and installs
+`AppDomain.UnhandledException` plus `ProcessExit`. On an unhandled exception it writes:
+
+```
+Crashes\crash-yyyyMMdd-HHmmss.txt
+```
+
+in the data directory. The report contains the reason, time, engine version, OS, CLR version and
+bitness, the command line, the working directory, the **subsystem table**, the full exception
+chain with stack traces, and the last 200 log lines.
+
+It is written separately from the log on purpose: the log may be the thing that is broken (disk
+full, file locked), and the subsystem table is what actually explains a partial failure. A normal
+exit writes no report: `BeginShutdown` and `ProcessExit` set a flag that suppresses it.
+
+If even the report cannot be written, `WriteCrashReport` returns null and nothing else happens.
+There is no minidump; `*.dmp` is gitignored but nothing produces one yet.
+
+## Other bugs that are already fixed
+
+These are worth knowing because the symptom does not point at the cause.
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| Every mesh silently fails to draw, nothing in the log | `Buffer.BlockCopy` rejects arrays of structs, so the upload threw and the fault guard swallowed the draw | `SceneRenderer.StructsToBytes` pins the array and uses `Marshal.Copy` |
+| Textured surfaces draw as flat colour | The player never uploaded the project's textures, so material indices pointed at textures the renderer had never seen | `TimelinePlayer.UploadTextures`, once per project |
+| Post-process effects composite the previous frame | The timeline captured from the window back buffer instead of the project's own frame buffer | Capture from `context.FrameTarget` |
+| A capture right after a clear grabs the previous frame | A back-buffer copy is not ordered against a preceding clear in the same batch | Flush before copying; the timeline captures its own buffer instead |
+| A 3D effect draws into a corner | The renderer set the viewport to the window size | The caller owns the viewport; `display3d` sets and restores its own rectangle |
+| A draw failure vanishes without a trace | The fault guard recorded it but nothing logged it | `DrawPass` logs the node name and records the failure |

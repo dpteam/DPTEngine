@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      net40 so the master runs on the same Windows versions as the engine, and so
+      the whole product is one runtime story. net9.0 is built as well: a host that
+      runs on a modern server should not have to install the .NET Framework 4
+      runtime to host a directory.
+    -->
+    <TargetFrameworks>net40;net9.0</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>dptengine-master</AssemblyName>
+    <RootNamespace>DPT.Engine.Master</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AssemblyTitle>DPT.Engine master server</AssemblyTitle>
+    <Product>DPT.Engine</Product>
+    <Company>DartPower Team</Company>
+    <Copyright>Copyright (C) DartPower Team. GPLv2.</Copyright>
+    <Version>1.0.0</Version>
+    <NeutralLanguage>en</NeutralLanguage>
+    <InvariantGlobalization Condition="'$(TargetFramework)' == 'net9.0'">true</InvariantGlobalization>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net40'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!--
+    The protocol is compiled in, not referenced as an assembly.
+
+    A project reference puts DPT.Engine.Shared.dll next to the exe, and that is
+    exactly the DLL that goes missing when someone copies the master alone onto a
+    server. Compiling the same sources in makes the master a single file.
+  -->
+  <ItemGroup>
+    <Compile Include="..\DPT.Engine.Shared\MasterProtocol.cs" Link="Shared\MasterProtocol.cs" />
+    <Compile Include="..\DPT.Engine.Shared\MasterSessionInfo.cs" Link="Shared\MasterSessionInfo.cs" />
+    <Compile Include="..\DPT.Engine.Shared\MasterProjectInfo.cs" Link="Shared\MasterProjectInfo.cs" />
+    <Compile Include="..\DPT.Engine.Shared\MasterClient.cs" Link="Shared\MasterClient.cs" />
+    <Compile Include="..\DPT.Engine.Shared\Branding.cs" Link="Shared\Branding.cs" />
+    <Compile Include="..\DPT.Engine.Shared\PortablePaths.cs" Link="Shared\PortablePaths.cs" />
+  </ItemGroup>
+
+</Project>

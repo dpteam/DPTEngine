@@ -598,6 +598,7 @@ namespace DPT.Engine.Project
 
                 json.Set("property", track.Property);
                 json.Set("interpolation", track.Curve.Interpolation.ToString().ToLowerInvariant());
+                json.Set("loop", track.Curve.Loop);
 
                 var keys = JsonValue.NewArray();
 
@@ -635,6 +636,8 @@ namespace DPT.Engine.Project
                     case "square": track.Curve.Interpolation = Interpolation.Square; break;
                     default: track.Curve.Interpolation = Interpolation.Linear; break;
                 }
+
+                track.Curve.Loop = json["loop"].AsBool(false);
 
                 var keys = json.ArrayOf("keys");
                 var parsed = new Key[keys.Count];

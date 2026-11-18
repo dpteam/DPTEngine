@@ -169,7 +169,9 @@ namespace DPT.Engine.Shared
             return -1;
         }
 
-        /// <summary>Human-readable reason for a rejected header, or null when it is valid.</summary>
+        /// <summary>
+        /// Human-readable reason for a rejected header, or null when it is valid.
+        /// </summary>
         public static string HeaderError(byte[] header)
         {
             if (header == null || header.Length < HeaderSize) return "short-header";
@@ -199,6 +201,46 @@ namespace DPT.Engine.Shared
             if (RequestLength(header) < 0)
             {
                 return "invalid-body-length";
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Validates a reply header.
+        ///
+        /// Separate from <see cref="HeaderError"/> because a reply is a different
+        /// thing: it carries a status, and its body length is whatever the server
+        /// chose to send rather than one of the fixed request sizes. Running a reply
+        /// through the request validator rejects every successful answer that has a
+        /// body - which is exactly what happened the first time the master was
+        /// tested.
+        /// </summary>
+        public static string ResponseError(byte[] header)
+        {
+            if (header == null || header.Length < HeaderSize) return "short-header";
+
+            if (header[0] != Magic[0] || header[1] != Magic[1] ||
+                header[2] != Magic[2] || header[3] != Magic[3])
+            {
+                return "magic-not-DPTM";
+            }
+
+            if (Get16(header, 4) != Version)
+            {
+                return "directory-version-mismatch";
+            }
+
+            if (Get16(header, 14) != 0)
+            {
+                return "nonzero-reserved";
+            }
+
+            var length = Get32(header, 8);
+
+            if (length > MaxBodySize)
+            {
+                return "oversized-body";
             }
 
             return null;

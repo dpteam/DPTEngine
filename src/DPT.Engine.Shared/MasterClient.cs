@@ -156,13 +156,36 @@ namespace DPT.Engine.Shared
         /// <summary>Publishes (or updates) a project record and returns the stored row.</summary>
         public MasterProjectInfo ProjectPublish(byte[] lease, MasterProjectInfo info)
         {
+            byte[] ignored;
+            return ProjectPublish(lease, info, out ignored);
+        }
+
+        /// <summary>
+        /// Publishes (or updates) a project record.
+        ///
+        /// The reply carries the directory's lease followed by the stored row: a
+        /// first-time publisher has no lease yet, so the directory has to hand one
+        /// back or the publisher could never update or remove its own entry.
+        /// </summary>
+        public MasterProjectInfo ProjectPublish(byte[] lease, MasterProjectInfo info, out byte[] newLease)
+        {
+            if (info == null) throw new ArgumentNullException("info");
+
             var body = new byte[MasterProtocol.AuthSize + MasterProtocol.ProjectRowSize];
             Array.Copy(LeaseBody(lease), body, MasterProtocol.AuthSize);
             info.Encode(body, MasterProtocol.AuthSize);
 
             var reply = Call(MasterProtocol.OpProjectPublish, body, MasterProtocol.StatusOk);
-            if (reply.Length != MasterProtocol.ProjectRowSize) return info;
-            return MasterProjectInfo.Decode(reply, 0);
+
+            if (reply.Length < MasterProtocol.AuthSize + MasterProtocol.ProjectRowSize)
+            {
+                throw new InvalidDataException("Master returned a " + reply.Length + "-byte publish reply.");
+            }
+
+            newLease = new byte[MasterProtocol.AuthSize];
+            Array.Copy(reply, newLease, MasterProtocol.AuthSize);
+
+            return MasterProjectInfo.Decode(reply, MasterProtocol.AuthSize);
         }
 
         public MasterProjectInfo ProjectFetch(byte[] projectId)
@@ -241,7 +264,7 @@ namespace DPT.Engine.Shared
 
                     responseHeader = ReadExact(stream, MasterProtocol.HeaderSize);
 
-                    var error = MasterProtocol.HeaderError(responseHeader);
+                    var error = MasterProtocol.ResponseError(responseHeader);
                     if (error != null) throw new InvalidDataException("Master replied with " + error + ".");
 
                     var length = (int)MasterProtocol.Get32(responseHeader, 8);

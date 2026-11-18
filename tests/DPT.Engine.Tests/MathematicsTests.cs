@@ -180,6 +180,27 @@ namespace DPT.Engine.Tests
         }
 
         [Test]
+        internal void ColorSurvivesAHexRoundTrip()
+        {
+            // ToHex writes #RRGGBBAA; Parse must read the same order. Reading eight
+            // digits as AARRGGBB made a saved project reload with its alpha and red
+            // channels swapped, which is invisible until a semi-transparent colour
+            // turns opaque blue.
+            var original = new ColorRgba(0x3C, 0xB4, 0xFF, 0x80);
+
+            var text = original.ToHex();
+            Assert.Equal("#3CB4FF80", text, "hex form is RRGGBBAA");
+
+            var parsed = ColorRgba.Parse(text);
+
+            Assert.Equal(0x3C, (int)parsed.R, "R survives");
+            Assert.Equal(0xB4, (int)parsed.G, "G survives");
+            Assert.Equal(0xFF, (int)parsed.B, "B survives");
+            Assert.Equal(0x80, (int)parsed.A, "A survives");
+            Assert.True(parsed == original, "the colour round-trips exactly");
+        }
+
+        [Test]
         internal void WrapAngleKeepsTheSmallestDelta()
         {
             var delta = MathHelper.AngleDelta(MathHelper.Pi * 0.9f, -MathHelper.Pi * 0.9f);
