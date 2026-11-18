@@ -8,7 +8,7 @@ using System.Collections.Generic;
 
 using DPT.Engine.Mathematics;
 
-namespace DPT.Engine.Scene
+namespace DPT.Engine.Scenes
 {
     /// <summary>
     /// Blend factors, in the engine's own vocabulary.

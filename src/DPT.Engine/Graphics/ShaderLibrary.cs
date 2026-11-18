@@ -46,9 +46,9 @@ namespace DPT.Engine.Graphics
         /// world-space normal that the environment-map shader needs.
         /// </summary>
         internal const string VertexPositionNormalTexture = @"
-float4x4 Projection     : register(c0);
-float4x4 View           : register(c4);
-float4x4 World          : register(c8);
+row_major float4x4 Projection     : register(c0);
+row_major float4x4 View           : register(c4);
+row_major float4x4 World          : register(c8);
 float4   FogRange       : register(c16);
 
 struct VS_INPUT
@@ -90,10 +90,10 @@ VS_OUTPUT main(VS_INPUT input)
         /// matrix, exactly as the original did.
         /// </summary>
         internal const string VertexPositionTexture = @"
-float4x4 Projection     : register(c0);
-float4x4 View           : register(c4);
-float4x4 World          : register(c8);
-float4x4 TexTransform   : register(c12);
+row_major float4x4 Projection     : register(c0);
+row_major float4x4 View           : register(c4);
+row_major float4x4 World          : register(c8);
+row_major float4x4 TexTransform   : register(c12);
 
 struct VS_INPUT
 {
@@ -123,9 +123,9 @@ VS_OUTPUT main(VS_INPUT input)
 
         /// <summary>Position + texture coordinate + per-vertex colour: textured particles.</summary>
         internal const string VertexPositionTextureColor = @"
-float4x4 Projection     : register(c0);
-float4x4 View           : register(c4);
-float4x4 World          : register(c8);
+row_major float4x4 Projection     : register(c0);
+row_major float4x4 View           : register(c4);
+row_major float4x4 World          : register(c8);
 
 struct VS_INPUT
 {
@@ -156,9 +156,9 @@ VS_OUTPUT main(VS_INPUT input)
 
         /// <summary>Position + per-vertex colour: particle tails, debug lines.</summary>
         internal const string VertexPositionColor = @"
-float4x4 Projection     : register(c0);
-float4x4 View           : register(c4);
-float4x4 World          : register(c8);
+row_major float4x4 Projection     : register(c0);
+row_major float4x4 View           : register(c4);
+row_major float4x4 World          : register(c8);
 
 struct VS_INPUT
 {

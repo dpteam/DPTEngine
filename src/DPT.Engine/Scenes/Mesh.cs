@@ -8,7 +8,7 @@ using System.Collections.Generic;
 
 using DPT.Engine.Mathematics;
 
-namespace DPT.Engine.Scene
+namespace DPT.Engine.Scenes
 {
     /// <summary>
     /// One vertex: position, normal, texture coordinate.
