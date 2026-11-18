@@ -214,28 +214,18 @@ namespace DPT.Engine.Engine
 
                 effect.ComputeRect(context);
 
-                EngineLog.Verbose("player", "effect " + i + " " + effect.TypeName +
-                                            " rect " + context.X1 + "," + context.Y1 + " " +
-                                            (context.X2 - context.X1) + "x" + (context.Y2 - context.Y1));
-
                 FaultGuard.Guard("player", "effect:" + effect.TypeName, delegate { effect.Render(context); });
             }
 
-            EngineLog.Verbose("player", "effects done");
-
             // Back to the window and blit with letterboxing.
-            EngineLog.Verbose("player", "unbinding render target");
             device.SetRenderTarget(null);
             device.SetViewport(0, 0, device.Width, device.Height);
 
-            EngineLog.Verbose("player", "presenting to window");
             PresentFrameToWindow();
 
             // The 3D pass sets its viewport to the event rectangle; leaving it
             // there would make the next frame's effects draw into a corner.
             device.SetViewport(0, 0, device.Width, device.Height);
-
-            EngineLog.Verbose("player", "frame done");
         }
 
         /// <summary>

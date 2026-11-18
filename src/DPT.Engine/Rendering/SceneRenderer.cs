@@ -702,12 +702,6 @@ namespace DPT.Engine.Rendering
 
             var world = item.Node.World;
 
-            EngineLog.Verbose("renderer", "draw '" + item.Node.Name + "' at (" +
-                                          world.M41.ToString("0.00") + ", " +
-                                          world.M42.ToString("0.00") + ", " +
-                                          world.M43.ToString("0.00") + ") verts " +
-                                          buffers.VertexCount + " tris " + buffers.TriangleCount);
-
             device.SetTransform(D3D9.Transform.World, ref world);
             device.SetVertexShaderConstant(D3D9.Registers.World, ref world);
 

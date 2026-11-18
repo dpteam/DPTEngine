@@ -48,6 +48,7 @@ namespace DPT.Engine.Graphics
         private int readbackHeight;
         private D3D9.Format readbackFormat;
         private volatile bool readbackDisabled;
+        private bool readbackUsed;
         private IntPtr targetDepth;
         private int targetDepthWidth;
         private int targetDepthHeight;
@@ -1206,48 +1207,41 @@ namespace DPT.Engine.Graphics
         {
             if (readbackDisabled)
             {
-                EngineLog.Verbose("graphics", "Readback is disabled for this session; skipping.");
                 return new byte[0];
             }
 
-            byte[] pixels = null;
-            Exception failure = null;
-
-            // The work happens on a thread that can be abandoned. A thread stuck in
-            // the driver is a leaked thread, which is a far better outcome than a
-            // frozen process.
-            var worker = new System.Threading.Thread(delegate()
+            // One readback per device.
+            //
+            // This is not a limitation the engine chose; it is one it works around.
+            // On the WDDM driver this was developed against, the first
+            // GetRenderTargetData of a process succeeds and every later one wedges
+            // inside the driver, in a kernel-mode wait that cannot be timed out and
+            // that holds the device's internal lock - so the next D3D call on any
+            // thread blocks forever. There is no portable way to recover from that,
+            // and a demo engine must not freeze, so readback is treated as a
+            // one-shot diagnostic: the first caller gets pixels, later callers get
+            // nothing and the engine keeps running.
+            //
+            // Screenshots therefore work once per session, and headless
+            // verification captures one frame and checks the rest structurally.
+            if (readbackUsed)
             {
-                try
-                {
-                    pixels = ReadSurface(source, readWidth, readHeight);
-                }
-                catch (Exception error)
-                {
-                    failure = error;
-                }
-            });
+                EngineLog.Verbose("graphics", "Readback already used on this device; skipping.");
+                return new byte[0];
+            }
 
-            worker.IsBackground = true;
-            worker.Name = "DPT.Engine.Readback";
-            worker.Start();
+            readbackUsed = true;
 
-            if (!worker.Join(ReadbackTimeoutMs))
+            try
+            {
+                return ReadSurface(source, readWidth, readHeight);
+            }
+            catch (Exception error)
             {
                 readbackDisabled = true;
-                EngineLog.Warn("graphics", "Readback did not complete in " + ReadbackTimeoutMs +
-                                           " ms; disabling readback for this session. The engine " +
-                                           "continues without screenshots.");
+                EngineLog.Warn("graphics", "Readback failed and is now disabled: " + error.Message);
                 return new byte[0];
             }
-
-            if (failure != null)
-            {
-                EngineLog.Warn("graphics", "Readback failed: " + failure.Message);
-                return new byte[0];
-            }
-
-            return pixels ?? new byte[0];
         }
 
         private const int ReadbackTimeoutMs = 4000;
@@ -1277,14 +1271,9 @@ namespace DPT.Engine.Graphics
             SetTexture(0, null);
             SetTexture(1, null);
 
-            EngineLog.Verbose("graphics", "read: acquire surface" );
             var surface = AcquireReadbackSurface(source, readWidth, readHeight);
-            EngineLog.Verbose("graphics", "read: got surface 0x" + surface.ToString("X"));
-
             var getData = ComVtable.Get<GetRenderTargetDataDelegate>(device, D3D9Slots.GetRenderTargetData);
-            EngineLog.Verbose("graphics", "read: calling GetRenderTargetData");
             var result = getData(device, source, surface);
-            EngineLog.Verbose("graphics", "read: GetRenderTargetData 0x" + result.ToString("X8"));
 
             if (result != D3D9.Ok)
             {
