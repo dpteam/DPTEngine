@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      .NET Framework 4.0: the runtime has to run on Windows XP SP3 and up, the
+      same floor the reference projects target. Everything it needs is in the
+      BCL plus user32/gdi32/winmm/d3d9.
+    -->
+    <TargetFramework>net40</TargetFramework>
+    <OutputType>Library</OutputType>
+    <AssemblyName>DPT.Engine</AssemblyName>
+    <RootNamespace>DPT.Engine</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AssemblyTitle>DPT.Engine runtime</AssemblyTitle>
+    <Product>DPT.Engine</Product>
+    <Company>DartPower Team</Company>
+    <Copyright>Copyright (C) DartPower Team. GPLv2.</Copyright>
+    <Version>1.0.0</Version>
+    <NeutralLanguage>en</NeutralLanguage>
+    <!--
+      CS0162 unreachable code, CS0219 unused local, CS0414 unused field: the
+      port keeps some members that the original had and a later feature will
+      use. Silencing them keeps the build output readable for the ones that
+      matter.
+    -->
+    <NoWarn>$(NoWarn);CS0162;CS0168;CS0219;CS0414;CS0649;CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DPT.Engine.Shared\DPT.Engine.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Core" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The test assembly drives the device and the resource wrappers directly.
+      They are internal because nothing outside the engine should be able to
+      bypass the renderer's state tracking.
+    -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>dptengine-tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

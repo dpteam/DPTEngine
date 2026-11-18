@@ -1,0 +1,90 @@
+# ---------------------------------------------------------------------------
+# Build output
+# ---------------------------------------------------------------------------
+bin/
+obj/
+dist/
+publish/
+*.pdb
+*.cache
+
+# ---------------------------------------------------------------------------
+# Third-party reference trees
+#
+# refs/ holds upstream and legacy sources kept only for reading: the original
+# Addict2 XNA engine this project was ported from, and any vendor SDKs. They
+# are somebody else's code, sometimes under a different licence, and they are
+# not part of the build. Cloning the repo should not pull them in.
+# ---------------------------------------------------------------------------
+refs/
+
+# ---------------------------------------------------------------------------
+# Local run artefacts
+#
+# The runtime writes these next to the executable (portable install) or under
+# %APPDATA%\DPTEngine when that folder is read-only.
+# ---------------------------------------------------------------------------
+Storage/
+Screenshots/
+*.log
+*.log.1
+*.log.2
+*.log.3
+*.bmp
+*.dmp
+
+# Editor state that belongs to one machine, not to the project
+launcher.cfg
+editor.cfg
+auth.token
+.sessions/
+.projects/
+
+# ---------------------------------------------------------------------------
+# IDE / editor
+# ---------------------------------------------------------------------------
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userprefs
+*.DotSettings.user
+*.sln.docstates
+*.csproj.user
+*.rsuser
+mono_crash.*
+
+# Rider / Resharper caches
+_ReSharper*/
+*.DotSettings
+
+# ---------------------------------------------------------------------------
+# Windows shell droppings
+#
+# Explorer writes Thumbs.db into any folder whose pictures it has shown, and
+# desktop.ini whenever a folder gets a custom icon. Both appear the moment
+# someone opens docs/images, and neither is content.
+# ---------------------------------------------------------------------------
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ---------------------------------------------------------------------------
+# Node / web tooling
+#
+# The editor's page is plain HTML/CSS/JS with no build step, but a developer
+# may still install something locally.
+# ---------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-error.log*
+package-lock.json
+
+# ---------------------------------------------------------------------------
+# OS noise
+# ---------------------------------------------------------------------------
+.DS_Store
+*.swp
+*~

@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="src/DPT.Engine/DPT.Engine.csproj" />
+  <Project Path="src/DPT.Engine.Shared/DPT.Engine.Shared.csproj" />
+  <Project Path="src/DPT.Engine.Master/DPT.Engine.Master.csproj" />
+  <Project Path="src/DPT.Engine.Editor/DPT.Engine.Editor.csproj" />
+  <Project Path="src/DPT.Engine.Launcher/DPT.Engine.Launcher.csproj" />
+</Solution>

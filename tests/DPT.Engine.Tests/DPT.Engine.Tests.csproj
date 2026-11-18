@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      net40 so the tests exercise exactly the assembly that ships. Running them
+      on .NET 9 would hide the very interop bugs they exist to catch: the CLR's
+      marshalling of COM vtables and 32-bit structs differs subtly between
+      runtimes, and the engine ships on .NET Framework.
+    -->
+    <TargetFramework>net40</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>dptengine-tests</AssemblyName>
+    <RootNamespace>DPT.Engine.Tests</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PlatformTarget>x86</PlatformTarget>
+    <Prefer32Bit>true</Prefer32Bit>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DPT.Engine\DPT.Engine.csproj" />
+    <ProjectReference Include="..\..\src\DPT.Engine.Shared\DPT.Engine.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Core" />
+  </ItemGroup>
+
+</Project>

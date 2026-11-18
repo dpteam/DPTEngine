@@ -1,0 +1,55 @@
+# Normalise text on commit, so a checkout on any machine produces the same bytes.
+* text=auto eol=lf
+
+# ---------------------------------------------------------------------------
+# Source and documentation: LF.
+#
+# The project builds on Windows, but nothing in the build depends on CRLF, and
+# LF keeps diffs readable when the same file is edited from the web editor.
+# ---------------------------------------------------------------------------
+*.cs         text eol=lf
+*.csproj     text eol=lf
+*.slnx       text eol=lf
+*.sln        text eol=lf
+*.props      text eol=lf
+*.targets    text eol=lf
+*.md         text eol=lf
+*.json       text eol=lf
+*.yml        text eol=lf
+*.yaml       text eol=lf
+*.html       text eol=lf
+*.css        text eol=lf
+*.js         text eol=lf
+*.svg        text eol=lf
+*.gitignore  text eol=lf
+*.gitattributes text eol=lf
+LICENSE      text eol=lf
+
+# ---------------------------------------------------------------------------
+# Scripts the user double-clicks or runs from cmd.exe: CRLF.
+# A .bat with LF line endings fails in ways that look like a bug in the script.
+# ---------------------------------------------------------------------------
+*.bat        text eol=crlf
+*.cmd        text eol=crlf
+*.ps1        text eol=crlf
+*.cfg        text eol=crlf
+
+# ---------------------------------------------------------------------------
+# Binaries: never touch.
+# ---------------------------------------------------------------------------
+*.dll        binary
+*.exe        binary
+*.ico        binary
+*.png        binary
+*.jpg        binary
+*.bmp        binary
+*.gif        binary
+*.wav        binary
+*.ogg        binary
+*.mp3        binary
+*.zip        binary
+*.7z         binary
+*.min        binary
+*.fxo        binary
+*.vso        binary
+*.pso        binary
