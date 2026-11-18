@@ -7,8 +7,8 @@
       BCL plus user32/gdi32/winmm/d3d9.
     -->
     <TargetFramework>net40</TargetFramework>
-    <OutputType>Library</OutputType>
-    <AssemblyName>DPT.Engine</AssemblyName>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>dptengine</AssemblyName>
     <RootNamespace>DPT.Engine</RootNamespace>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -40,6 +40,7 @@
 
   <ItemGroup>
     <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
   </ItemGroup>
 
   <ItemGroup>

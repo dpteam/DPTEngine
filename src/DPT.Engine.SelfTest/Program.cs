@@ -36,8 +36,28 @@ namespace DPT.Engine.SelfTest
 
         private static int failures;
 
+        /// <summary>
+        /// Suppresses the Windows "this program has stopped working" dialog.
+        ///
+        /// Without this a native fault blocks the process on a modal message box,
+        /// so an automated run appears to hang instead of reporting the fault. The
+        /// engine's own entry point sets the same mode: a full-screen demo that
+        /// crashes on somebody else's machine should leave a crash report and exit,
+        /// not wait for a click that never comes.
+        /// </summary>
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        private static extern uint SetErrorMode(uint mode);
+
+        private const uint SemFailCriticalErrors = 0x0001;
+        private const uint SemNoGpfaultErrorBox = 0x0002;
+        private const uint SemNoAlignmentFaultExcept = 0x0004;
+        private const uint SemNoOpenFileErrorBox = 0x8000;
+
         private static int Main(string[] args)
         {
+            SetErrorMode(SemFailCriticalErrors | SemNoGpfaultErrorBox |
+                         SemNoAlignmentFaultExcept | SemNoOpenFileErrorBox);
+
             Console.WriteLine("DPT.Engine self-test");
             Console.WriteLine();
 
@@ -53,6 +73,11 @@ namespace DPT.Engine.SelfTest
             Run("shader path", TestShaderPath);
             Run("render", TestRender);
             Run("animation", TestAnimation);
+            Run("readback stress", TestReadbackStress);
+
+            // The probe prints the real vtable slots; it is diagnostic output
+            // rather than a pass/fail check, so it runs last.
+            VtableProbe.Run();
 
             Console.WriteLine();
 
@@ -69,8 +94,7 @@ namespace DPT.Engine.SelfTest
         }
 
         private static void Run(string name, Action test)
-        {
-            try
+        {            try
             {
                 test();
                 Console.WriteLine("  PASS  " + name);
@@ -471,56 +495,154 @@ namespace DPT.Engine.SelfTest
 
         // ---------------------------------------------------------------- animation
 
+        /// <summary>
+        /// Scene-level animation: tracks address a node by id, and the scene poses
+        /// itself into an animation.
+        /// </summary>
         private static void TestAnimation()
         {
+            var scene = new Scene();
+
             var node = new SceneNode();
             node.Id = 1;
+            scene.Nodes.Add(node);
+            scene.RebuildHierarchy();
 
-            var track = new AnimationTrack();
-            track.Property = "x";
-            track.Curve = Spline.Ramp(0f, 10f, 1f);
-            node.Tracks.Add(track);
+            var animation = new SceneAnimation();
+            animation.Id = 0;
 
-            node.Animate(0f);
+            var move = new AnimationTrack();
+            move.Property = "1.x";
+            move.Curve = Spline.Ramp(0f, 10f, 1f);
+            animation.Tracks.Add(move);
+
+            scene.Animations.Add(animation);
+
+            scene.ApplyAnimation(0, 0f);
             CheckNear(0f, node.Position.X, 1e-4f, "animation at start");
 
-            node.Animate(0.5f);
+            scene.ApplyAnimation(0, 0.5f);
             CheckNear(5f, node.Position.X, 1e-4f, "animation at middle");
 
-            node.Animate(1f);
+            scene.ApplyAnimation(0, 1f);
             CheckNear(10f, node.Position.X, 1e-4f, "animation at end");
 
             // Rotation tracks must stay normalised, or the object scales.
             var rotation = new SceneNode();
             rotation.Id = 2;
+            scene.Nodes.Add(rotation);
+            scene.RebuildHierarchy();
+
+            var spin = new SceneAnimation();
+            spin.Id = 1;
 
             var rx = new AnimationTrack();
-            rx.Property = "rx";
+            rx.Property = "2.rx";
             rx.Curve = Spline.Constant(0.5f);
+            spin.Tracks.Add(rx);
 
             var ry = new AnimationTrack();
-            ry.Property = "ry";
+            ry.Property = "2.ry";
             ry.Curve = Spline.Constant(0.5f);
+            spin.Tracks.Add(ry);
 
-            rotation.Tracks.Add(rx);
-            rotation.Tracks.Add(ry);
+            scene.Animations.Add(spin);
 
-            rotation.Animate(0f);
+            scene.ApplyAnimation(1, 0f);
             CheckNear(1f, rotation.Rotation.Length, 1e-3f, "rotation stays unit length");
 
             // A zeroed quaternion must fall back to identity, not NaN.
             var broken = new SceneNode();
             broken.Id = 3;
-
-            var zero = new AnimationTrack();
-            zero.Property = "rw";
-            zero.Curve = Spline.Constant(0f);
-            broken.Tracks.Add(zero);
-
             broken.Rotation = new Quaternion(0f, 0f, 0f, 0f);
-            broken.Animate(0f);
+            scene.Nodes.Add(broken);
+            scene.RebuildHierarchy();
 
+            var zero = new SceneAnimation();
+            zero.Id = 2;
+
+            var rw = new AnimationTrack();
+            rw.Property = "3.rw";
+            rw.Curve = Spline.Constant(0f);
+            zero.Tracks.Add(rw);
+
+            scene.Animations.Add(zero);
+
+            scene.ApplyAnimation(2, 0f);
             CheckNear(1f, broken.Rotation.W, 1e-3f, "a zero quaternion becomes identity");
+
+            // A track that addresses a node which does not exist must be skipped,
+            // not throw: a project can reference a deleted object.
+            var dangling = new SceneAnimation();
+            dangling.Id = 3;
+
+            var orphan = new AnimationTrack();
+            orphan.Property = "999.x";
+            orphan.Curve = Spline.Ramp(0f, 1f, 1f);
+            dangling.Tracks.Add(orphan);
+
+            scene.Animations.Add(dangling);
+            scene.ApplyAnimation(3, 0.5f);
+        }
+        // ---------------------------------------------------------------- readback stress
+
+        /// <summary>
+        /// Reads the back buffer many times in a row, with render-target work in
+        /// between, to reproduce the access violation the headless run hits after
+        /// a few frames.
+        ///
+        /// Deliberately does NOT catch anything: the point is to find the exact
+        /// iteration that faults, and an AccessViolation cannot be caught on
+        /// .NET Framework anyway.
+        /// </summary>
+        private static void TestReadbackStress()
+        {
+            using (var window = new Win32Window())
+            {
+                window.CreateHidden("DPT.Engine readback stress", Width, Height);
+
+                using (var device = new D3D9Device())
+                {
+                    device.Create(window.Handle, Width, Height, false, false);
+
+                    using (var renderer = new SceneRenderer(device))
+                    using (var quads = new QuadRenderer(device))
+                    using (var target = device.CreateRenderTarget(128, 128))
+                    {
+                        renderer.InitializeShaders();
+                        quads.Initialize();
+
+                        var scene = BuildScene(renderer);
+
+                        for (var iteration = 0; iteration < 40; iteration++)
+                        {
+                            device.BeginScene();
+                            device.Clear(0xFF000000, true, true, false);
+
+                            renderer.Render(scene, 0f);
+
+                            // The render-target round trip is the part the headless
+                            // run does that the earlier tests did not.
+                            device.CopyBackBufferTo(target, 0, 0, 128, 128);
+
+                            quads.BeginScreenSpace(Width, Height);
+                            quads.Draw(target.Texture, 0, 0, 64, 64,
+                                ColorRgba.White, BlendMode.One, BlendMode.Zero);
+
+                            device.EndScene();
+
+                            var pixels = device.ReadBackBuffer(device.Width, device.Height);
+
+                            if (pixels.Length == 0)
+                            {
+                                throw new InvalidOperationException("readback returned nothing");
+                            }
+
+                            Console.WriteLine("        iteration " + iteration + " ok");
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -175,6 +175,17 @@ namespace DPT.Engine.Shared
             }
         }
 
+        /// <summary>
+        /// A member that should be an array. Returns an empty array when the member
+        /// is missing or has the wrong type, so callers can iterate without a null
+        /// check on every field of a hand-written file.
+        /// </summary>
+        public JsonValue ArrayOf(string name)
+        {
+            var value = this[name];
+            return value.kind == Kind.Array ? value : NewArray();
+        }
+
         public IEnumerable<KeyValuePair<string, JsonValue>> Members
         {
             get

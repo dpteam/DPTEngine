@@ -1,5 +1,5 @@
 //
-// DPT.Engine - materials, scene nodes, scenes, worlds.
+// DPT.Engine - materials, scene nodes, scenes.
 // Copyright (C) 2026 DartPower Team. GPLv2.
 //
 
@@ -15,8 +15,8 @@ namespace DPT.Engine.Scenes
     ///
     /// The names are the ones the original project format used, which came from
     /// OpenGL. They are mapped onto D3DBLEND at draw time; keeping the GL names
-    /// in the file means existing projects keep their look, and "SourceAlpha"
-    /// reads the same in the editor as it did in the original tool.
+    /// means existing projects keep their look, and "SourceAlpha" reads the same
+    /// in the editor as it did in the original tool.
     /// </summary>
     public enum BlendMode
     {
@@ -36,7 +36,7 @@ namespace DPT.Engine.Scenes
     /// <summary>How a surface responds to light.</summary>
     public enum ShadingMode
     {
-        /// <summary>Lighting disabled: the texture and colour are the final pixel.</summary>
+        /// <summary>Lighting disabled: texture and colour are the final pixel.</summary>
         Unlit = 0,
 
         /// <summary>One normal per face. Faceted, and the cheapest.</summary>
@@ -49,15 +49,14 @@ namespace DPT.Engine.Scenes
     /// <summary>
     /// How a mesh is drawn.
     ///
-    /// Deliberately a plain data object: the editor writes these fields straight
-    /// from JSON and the renderer reads them, with no behaviour in between. Every
-    /// property that is not in the project file has a default that renders
-    /// something visible, so a hand-written project with a missing field still
-    /// shows up on screen instead of silently disappearing.
+    /// A plain data object: the editor writes these fields from JSON and the
+    /// renderer reads them. Every property has a default that renders something
+    /// visible, so a hand-written project with a missing field still shows up
+    /// instead of silently disappearing.
     /// </summary>
     public sealed class Material
     {
-        /// <summary>Index into <see cref="Project.Textures"/>, or -1 for an untextured surface.</summary>
+        /// <summary>Index into the project's textures, or -1 for an untextured surface.</summary>
         public int TextureIndex = -1;
 
         /// <summary>Second texture for environment mapping, or -1.</summary>
@@ -76,7 +75,7 @@ namespace DPT.Engine.Scenes
         /// <summary>Write depth. Off for additive glows that must not occlude.</summary>
         public bool DepthWrite = true;
 
-        /// <summary>Test depth. Off for overlays drawn on top of everything.</summary>
+        /// <summary>Test depth. Off for overlays drawn over everything.</summary>
         public bool DepthTest = true;
 
         /// <summary>Draw in the transparent pass, after all opaque geometry.</summary>
@@ -89,11 +88,11 @@ namespace DPT.Engine.Scenes
     }
 
     /// <summary>
-    /// One animated transform property.
+    /// One animated property.
     ///
-    /// Tracks are looked up by name rather than by a switch on an enum so that a
-    /// project can animate a property the engine does not know about (a shader
-    /// constant, say) and only the consumer that understands it will act on it.
+    /// Tracks are keyed by name rather than by an enum so a project can animate a
+    /// property the engine does not know about, and only the consumer that
+    /// understands it will act on it.
     /// </summary>
     public sealed class AnimationTrack
     {
@@ -106,44 +105,14 @@ namespace DPT.Engine.Scenes
         }
     }
 
-    /// <summary>
-    /// A node in the scene graph.
-    ///
-    /// The transform is decomposed (position, rotation, scale) rather than stored
-    /// as a matrix, because the editor's gizmos and the animation system both work
-    /// on the parts; <see cref="LocalMatrix"/> rebuilds the matrix once per frame.
-    ///
-    /// Children are stored as ids, not references, so a project can be loaded in
-    /// any order and a parent can be defined after its child.
-    /// </summary>
-    public sealed class SceneNode
+    /// <summary>A named set of tracks: one animation a scene can be posed into.</summary>
+    public sealed class SceneAnimation
     {
         public int Id;
-        public int ParentId = -1;
         public string Name = "";
-
-        public Mesh Mesh;
-        public Material Material = new Material();
-
-        public Vector3 Position = Vector3.Zero;
-        public Quaternion Rotation = Quaternion.Identity;
-        public Vector3 Scale = Vector3.One;
-
-        public bool Visible = true;
-
-        /// <summary>Animation tracks, empty when the node is static.</summary>
         public readonly List<AnimationTrack> Tracks = new List<AnimationTrack>();
 
-        /// <summary>Child ids, in draw order.</summary>
-        public readonly List<int> Children = new List<int>();
-
-        /// <summary>World matrix for the current frame, filled in by the renderer.</summary>
-        public Matrix World = Matrix.Identity;
-
-        /// <summary>True when <see cref="World"/> has been computed this frame.</summary>
-        public bool WorldValid;
-
-        public AnimationTrack FindTrack(string property)
+        public AnimationTrack Find(string property)
         {
             for (var i = 0; i < Tracks.Count; i++)
             {
@@ -155,6 +124,40 @@ namespace DPT.Engine.Scenes
 
             return null;
         }
+    }
+
+    /// <summary>
+    /// A node in the scene graph.
+    ///
+    /// The transform is decomposed into position, rotation and scale rather than
+    /// stored as a matrix, because the editor's gizmos and the animation system
+    /// both work on the parts; <see cref="LocalMatrix"/> rebuilds the matrix once
+    /// per frame.
+    ///
+    /// Children are ids, not references, so a project can be loaded in any order
+    /// and a parent may be defined after its child.
+    /// </summary>
+    public sealed class SceneNode
+    {
+        public int Id;
+        public int ParentId = -1;
+        public string Name = "";
+
+        public Mesh Mesh;
+        public Material Material = new Material();
+        public ParticleEmitter Emitter;
+
+        public Vector3 Position = Vector3.Zero;
+        public Quaternion Rotation = Quaternion.Identity;
+        public Vector3 Scale = Vector3.One;
+
+        public bool Visible = true;
+
+        /// <summary>Child ids, in draw order.</summary>
+        public readonly List<int> Children = new List<int>();
+
+        /// <summary>World matrix for the current frame, filled in by the renderer.</summary>
+        public Matrix World = Matrix.Identity;
 
         /// <summary>
         /// The node's own transform, without its parent's.
@@ -171,55 +174,16 @@ namespace DPT.Engine.Scenes
             return Matrix.Multiply(Matrix.Multiply(scale, rotation), translation);
         }
 
-        /// <summary>Applies the node's animation at <paramref name="time"/> seconds.</summary>
-        public void Animate(float time)
+        /// <summary>Rejects a rotation that has drifted away from unit length.</summary>
+        public void NormalizeRotation()
         {
-            for (var i = 0; i < Tracks.Count; i++)
-            {
-                var track = Tracks[i];
-                if (track.Curve.IsEmpty) continue;
-
-                var value = track.Sample(time);
-
-                switch (track.Property)
-                {
-                    case "x": Position.X = value; break;
-                    case "y": Position.Y = value; break;
-                    case "z": Position.Z = value; break;
-
-                    case "sx": Scale.X = value; break;
-                    case "sy": Scale.Y = value; break;
-                    case "sz": Scale.Z = value; break;
-
-                    case "rx": Rotation.X = value; break;
-                    case "ry": Rotation.Y = value; break;
-                    case "rz": Rotation.Z = value; break;
-                    case "rw": Rotation.W = value; break;
-
-                    case "r": Material.Colour.R = ToByte(value); break;
-                    case "g": Material.Colour.G = ToByte(value); break;
-                    case "b": Material.Colour.B = ToByte(value); break;
-                    case "a": Material.Colour.A = ToByte(value); break;
-                }
-            }
-
-            // Four separate rotation curves only make sense together, and only if
-            // they stay unit length; an unnormalised quaternion scales the object.
-            if (Rotation.LengthSquared < 1e-8f)
+            if (Rotation.LengthSquared < 1e-8f || !MathHelper.IsFinite(Rotation.LengthSquared))
             {
                 Rotation = Quaternion.Identity;
+                return;
             }
-            else
-            {
-                Rotation.Normalize();
-            }
-        }
 
-        private static byte ToByte(float value)
-        {
-            if (value <= 0f) return 0;
-            if (value >= 255f) return 255;
-            return (byte)value;
+            Rotation.Normalize();
         }
     }
 
@@ -246,9 +210,14 @@ namespace DPT.Engine.Scenes
 
             if (Math.Abs(Roll) > 0.0001f)
             {
-                var forward = Vector3.Normalize(Target - Position);
-                var rotation = Matrix.CreateFromAxisAngle(forward, MathHelper.ToRadians(Roll));
-                up = Vector3.TransformNormal(up, rotation);
+                var forward = Target - Position;
+
+                if (forward.LengthSquared > 1e-8f)
+                {
+                    forward.Normalize();
+                    var rotation = Matrix.CreateFromAxisAngle(forward, MathHelper.ToRadians(Roll));
+                    up = Vector3.TransformNormal(up, rotation);
+                }
             }
 
             return Matrix.CreateLookAt(Position, Target, up);
@@ -269,13 +238,21 @@ namespace DPT.Engine.Scenes
             get
             {
                 var forward = Target - Position;
+
+                if (forward.LengthSquared < 1e-8f) return Vector3.Forward;
+
                 forward.Normalize();
                 return forward;
             }
         }
+
+        public Camera Clone()
+        {
+            return (Camera)MemberwiseClone();
+        }
     }
 
-    /// <summary>Fog settings for a world.</summary>
+    /// <summary>Fog settings for a scene.</summary>
     public struct FogSettings
     {
         public bool Enabled;
@@ -290,18 +267,22 @@ namespace DPT.Engine.Scenes
     }
 
     /// <summary>
-    /// A drawable scene: a set of nodes plus the environment they sit in.
+    /// A drawable scene: a set of nodes, a camera and an environment.
     ///
-    /// The nodes live in one array and reference each other by id, so the
-    /// renderer can walk the tree without chasing pointers through a linked
-    /// structure and the editor can reorder the list freely.
+    /// Nodes live in one list and reference each other by id, so the renderer can
+    /// walk the tree without chasing pointers and the editor can reorder the list
+    /// freely.
     /// </summary>
     public sealed class Scene
     {
+        public int Id;
         public string Name = "";
 
         public readonly List<SceneNode> Nodes = new List<SceneNode>();
         public readonly List<int> RootNodes = new List<int>();
+
+        public readonly List<SceneAnimation> Animations = new List<SceneAnimation>();
+        public readonly List<AnimationTrack> CameraTracks = new List<AnimationTrack>();
 
         public Camera Camera = new Camera();
         public FogSettings Fog = FogSettings.Disabled;
@@ -311,6 +292,20 @@ namespace DPT.Engine.Scenes
 
         /// <summary>Direction the key light comes from, in world space.</summary>
         public Vector3 LightDirection = new Vector3(0.4f, -0.7f, 0.6f);
+
+        /// <summary>True when any node has a particle emitter.</summary>
+        public bool HasParticles
+        {
+            get
+            {
+                for (var i = 0; i < Nodes.Count; i++)
+                {
+                    if (Nodes[i].Emitter != null) return true;
+                }
+
+                return false;
+            }
+        }
 
         public SceneNode Find(int id)
         {
@@ -322,13 +317,27 @@ namespace DPT.Engine.Scenes
             return null;
         }
 
+        public SceneAnimation FindAnimation(int id)
+        {
+            for (var i = 0; i < Animations.Count; i++)
+            {
+                if (Animations[i].Id == id) return Animations[i];
+            }
+
+            return null;
+        }
+
+        public bool HasAnimation(int id)
+        {
+            return FindAnimation(id) != null;
+        }
+
         /// <summary>
-        /// Rebuilds <see cref="SceneNode.Children"/> and <see cref="RootNodes"/>
-        /// from the parent ids.
+        /// Rebuilds <see cref="Children"/> and <see cref="RootNodes"/> from the
+        /// parent ids.
         ///
-        /// Called once after loading. Doing it here means a project file cannot
-        /// describe a tree the renderer disagrees with - the parent ids are the
-        /// single source of truth.
+        /// Called once after loading. The parent ids are the single source of
+        /// truth, so a file cannot describe a tree the renderer disagrees with.
         /// </summary>
         public void RebuildHierarchy()
         {
@@ -354,10 +363,10 @@ namespace DPT.Engine.Scenes
                 if (parent == null)
                 {
                     // A dangling parent is a broken file, not a fatal error: the
-                    // node becomes a root so it is still visible and the editor can
+                    // node becomes a root so it stays visible and the editor can
                     // show it as an orphan.
-                    RootNodes.Add(node.Id);
                     node.ParentId = -1;
+                    RootNodes.Add(node.Id);
                     continue;
                 }
 
@@ -368,11 +377,6 @@ namespace DPT.Engine.Scenes
         /// <summary>Computes world matrices for the whole tree.</summary>
         public void UpdateTransforms()
         {
-            for (var i = 0; i < Nodes.Count; i++)
-            {
-                Nodes[i].WorldValid = false;
-            }
-
             for (var i = 0; i < RootNodes.Count; i++)
             {
                 UpdateTransform(Find(RootNodes[i]), Matrix.Identity);
@@ -384,7 +388,6 @@ namespace DPT.Engine.Scenes
             if (node == null) return;
 
             node.World = Matrix.Multiply(node.LocalMatrix(), parentWorld);
-            node.WorldValid = true;
 
             for (var i = 0; i < node.Children.Count; i++)
             {
@@ -392,12 +395,126 @@ namespace DPT.Engine.Scenes
             }
         }
 
-        /// <summary>Applies every animation track at the given time.</summary>
-        public void Animate(float time)
+        /// <summary>
+        /// Poses the scene into an animation at <paramref name="time"/> seconds.
+        ///
+        /// Tracks that a given node does not have are simply skipped, so an
+        /// animation can drive only the objects it cares about.
+        /// </summary>
+        public void ApplyAnimation(int animationId, float time)
+        {
+            var animation = FindAnimation(animationId);
+
+            if (animation == null) return;
+
+            for (var i = 0; i < animation.Tracks.Count; i++)
+            {
+                var track = animation.Tracks[i];
+
+                // Track properties are "nodeId.property", so one animation can
+                // drive every object without a per-node list.
+                var dot = track.Property.IndexOf('.');
+
+                if (dot <= 0) continue;
+
+                int nodeId;
+
+                if (!int.TryParse(track.Property.Substring(0, dot), out nodeId)) continue;
+
+                var node = Find(nodeId);
+
+                if (node == null) continue;
+
+                ApplyToNode(node, track.Property.Substring(dot + 1), track.Sample(time));
+            }
+
+            // Particle emitters follow the nodes they are attached to.
+            UpdateTransforms();
+        }
+
+        private static void ApplyToNode(SceneNode node, string property, float value)
+        {
+            switch (property)
+            {
+                case "x": node.Position.X = value; break;
+                case "y": node.Position.Y = value; break;
+                case "z": node.Position.Z = value; break;
+
+                case "sx": node.Scale.X = value; break;
+                case "sy": node.Scale.Y = value; break;
+                case "sz": node.Scale.Z = value; break;
+
+                case "rx": node.Rotation.X = value; break;
+                case "ry": node.Rotation.Y = value; break;
+                case "rz": node.Rotation.Z = value; break;
+                case "rw": node.Rotation.W = value; break;
+
+                case "r": node.Material.Colour.R = ToByte(value); break;
+                case "g": node.Material.Colour.G = ToByte(value); break;
+                case "b": node.Material.Colour.B = ToByte(value); break;
+                case "a": node.Material.Colour.A = ToByte(value); break;
+            }
+
+            node.NormalizeRotation();
+        }
+
+        private static byte ToByte(float value)
+        {
+            if (!MathHelper.IsFinite(value) || value <= 0f) return 0;
+            if (value >= 255f) return 255;
+            return (byte)value;
+        }
+
+        /// <summary>Samples the camera tracks at a time, falling back to the static camera.</summary>
+        public Camera SampleCamera(float time)
+        {
+            var camera = Camera.Clone();
+
+            for (var i = 0; i < CameraTracks.Count; i++)
+            {
+                var track = CameraTracks[i];
+
+                if (track.Curve.IsEmpty) continue;
+
+                var value = track.Sample(time);
+
+                switch (track.Property)
+                {
+                    case "eyeX": camera.Position.X = value; break;
+                    case "eyeY": camera.Position.Y = value; break;
+                    case "eyeZ": camera.Position.Z = value; break;
+
+                    case "targetX": camera.Target.X = value; break;
+                    case "targetY": camera.Target.Y = value; break;
+                    case "targetZ": camera.Target.Z = value; break;
+
+                    case "fov": camera.FieldOfView = MathHelper.Clamp(value, 1f, 179f); break;
+                    case "roll": camera.Roll = value; break;
+                }
+            }
+
+            return camera;
+        }
+
+        /// <summary>Advances every emitter in the scene by one simulation step.</summary>
+        public void UpdateParticles(int steps)
         {
             for (var i = 0; i < Nodes.Count; i++)
             {
-                Nodes[i].Animate(time);
+                var emitter = Nodes[i].Emitter;
+
+                if (emitter == null) continue;
+
+                emitter.Update(Nodes[i].World, steps);
+            }
+        }
+
+        /// <summary>Resets every emitter, for a timeline rewind.</summary>
+        public void ResetParticles()
+        {
+            for (var i = 0; i < Nodes.Count; i++)
+            {
+                if (Nodes[i].Emitter != null) Nodes[i].Emitter.Reset();
             }
         }
     }

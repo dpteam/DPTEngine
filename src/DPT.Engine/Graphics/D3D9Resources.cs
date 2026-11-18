@@ -20,13 +20,26 @@ namespace DPT.Engine.Graphics
     {
         private readonly IntPtr handle;
         private readonly ReleaseDelegate release;
+        private readonly bool ownsHandle;
         private bool disposed;
 
         protected ComResource(IntPtr handle)
+            : this(handle, true)
+        {
+        }
+
+        /// <summary>
+        /// <paramref name="ownsHandle"/> false creates a view: the object can be
+        /// used but Dispose does not release it, because something else owns it.
+        /// The render target's texture is the one case that needs this - the
+        /// target holds the reference and hands out views for sampling.
+        /// </summary>
+        protected ComResource(IntPtr handle, bool ownsHandle)
         {
             if (handle == IntPtr.Zero) throw new ArgumentNullException("handle");
 
             this.handle = handle;
+            this.ownsHandle = ownsHandle;
             release = ComVtable.Get<ReleaseDelegate>(handle, D3D9Slots.Release);
         }
 
@@ -45,7 +58,9 @@ namespace DPT.Engine.Graphics
             if (disposed) return;
             disposed = true;
             Dispose(true);
-            release(handle);
+
+            if (ownsHandle) release(handle);
+
             GC.SuppressFinalize(this);
         }
 
@@ -56,7 +71,7 @@ namespace DPT.Engine.Graphics
         ~ComResource()
         {
             // A finaliser cannot safely call into COM after shutdown, but leaking
-            // one object is better than a crash in the GC thread.
+            // one object is better than a crash on the GC thread.
         }
     }
 
@@ -71,7 +86,13 @@ namespace DPT.Engine.Graphics
         private readonly TextureUnlockRectDelegate unlockRect;
 
         internal D3D9Texture(IntPtr handle, int width, int height, int levels, bool renderTarget)
-            : base(handle)
+            : this(handle, width, height, levels, renderTarget, true)
+        {
+        }
+
+        internal D3D9Texture(IntPtr handle, int width, int height, int levels, bool renderTarget,
+            bool ownsHandle)
+            : base(handle, ownsHandle)
         {
             this.width = width;
             this.height = height;
@@ -270,25 +291,67 @@ namespace DPT.Engine.Graphics
     }
 
     /// <summary>
-    /// A default-pool render target.
+    /// A default-pool render target that can also be sampled as a texture.
+    ///
+    /// Backed by a texture rather than a bare surface, because every use in this
+    /// engine is "render into it, then draw it" - the blur, the feedback and the
+    /// contrast passes all sample their own previous result. A surface alone can
+    /// be a StretchRect destination but not a shader input.
     ///
     /// Default-pool resources live in video memory and are destroyed when the
-    /// device is lost, so every render target has to be recreated on reset.
+    /// device is lost, so a render target must be recreated on reset.
     /// </summary>
-    internal sealed class D3D9RenderTarget : ComResource
+    internal sealed class D3D9RenderTarget : IDisposable
     {
+        private readonly IntPtr texture;
+        private readonly IntPtr surface;
         private readonly int width;
         private readonly int height;
 
-        internal D3D9RenderTarget(IntPtr handle, int width, int height)
-            : base(handle)
+        private readonly ReleaseDelegate releaseTexture;
+        private readonly ReleaseDelegate releaseSurface;
+        private bool disposed;
+
+        internal D3D9RenderTarget(IntPtr texture, IntPtr surface, int width, int height)
         {
+            if (texture == IntPtr.Zero) throw new ArgumentNullException("texture");
+            if (surface == IntPtr.Zero) throw new ArgumentNullException("surface");
+
+            this.texture = texture;
+            this.surface = surface;
             this.width = width;
             this.height = height;
+
+            releaseTexture = ComVtable.Get<ReleaseDelegate>(texture, D3D9Slots.Release);
+            releaseSurface = ComVtable.Get<ReleaseDelegate>(surface, D3D9Slots.Release);
         }
 
         internal int Width { get { return width; } }
         internal int Height { get { return height; } }
+
+        /// <summary>The level-0 surface, for use as a StretchRect destination.</summary>
+        internal IntPtr Handle { get { return surface; } }
+
+        /// <summary>The texture itself, for binding to a sampler.</summary>
+        internal IntPtr TextureHandle { get { return texture; } }
+
+        /// <summary>
+        /// A view of this target as a texture, so callers can bind it without
+        /// knowing about the surface underneath.
+        /// </summary>
+        internal D3D9Texture Texture
+        {
+            get { return new D3D9Texture(texture, width, height, 1, true, false); }
+        }
+
+        public void Dispose()
+        {
+            if (disposed) return;
+            disposed = true;
+
+            releaseSurface(surface);
+            releaseTexture(texture);
+        }
     }
 
     /// <summary>A compiled vertex shader.</summary>

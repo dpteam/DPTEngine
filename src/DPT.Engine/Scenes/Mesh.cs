@@ -31,6 +31,17 @@ namespace DPT.Engine.Scenes
         }
     }
 
+    /// <summary>Which procedural recipe built a mesh, so it can be saved as parameters.</summary>
+    public enum MeshPrimitive
+    {
+        Box = 0,
+        Sphere = 1,
+        Plane = 2,
+
+        /// <summary>An explicit vertex list, used for imported geometry.</summary>
+        Custom = 3
+    }
+
     /// <summary>
     /// A triangle mesh.
     ///
@@ -42,6 +53,13 @@ namespace DPT.Engine.Scenes
     {
         public Vertex[] Vertices = new Vertex[0];
         public int[] Indices = new int[0];
+
+        /// <summary>How this mesh was built. Stored in the project so it can be rebuilt from parameters.</summary>
+        public MeshPrimitive Primitive = MeshPrimitive.Custom;
+
+        public float PrimitiveSize = 2f;
+        public int PrimitiveSegments = 16;
+        public int PrimitiveRings = 8;
 
         /// <summary>Axis-aligned bounds in local space, used for culling.</summary>
         public Vector3 BoundsMin;
@@ -124,6 +142,24 @@ namespace DPT.Engine.Scenes
         }
 
         /// <summary>
+        /// Multiplies every texture coordinate.
+        ///
+        /// A tiled floor is one quad with UVs running 0..40 rather than 0..1: the
+        /// sampler wraps, so one small texture covers a large surface. Without this
+        /// a 128-pixel grid stretched over sixty world units has lines narrower than
+        /// a pixel and the floor renders as flat black - which is exactly how the
+        /// template's first version looked.
+        /// </summary>
+        public void ScaleTextureCoordinates(float factor)
+        {
+            for (var i = 0; i < Vertices.Length; i++)
+            {
+                Vertices[i].TextureCoordinate.X *= factor;
+                Vertices[i].TextureCoordinate.Y *= factor;
+            }
+        }
+
+        /// <summary>
         /// True when the mesh's bounding sphere is behind the camera plane.
         ///
         /// A sphere rather than a box: one dot product per object, and a false
@@ -164,6 +200,8 @@ namespace DPT.Engine.Scenes
             };
 
             var mesh = new Mesh();
+            mesh.Primitive = MeshPrimitive.Box;
+            mesh.PrimitiveSize = size;
             mesh.Vertices = new Vertex[positions.Length];
 
             for (var i = 0; i < positions.Length; i++)
@@ -221,6 +259,10 @@ namespace DPT.Engine.Scenes
             }
 
             var mesh = new Mesh();
+            mesh.Primitive = MeshPrimitive.Sphere;
+            mesh.PrimitiveSize = radius * 2f;
+            mesh.PrimitiveSegments = segments;
+            mesh.PrimitiveRings = rings;
             mesh.Vertices = vertices.ToArray();
             mesh.Indices = indices.ToArray();
             mesh.RecalculateBounds();
@@ -260,6 +302,9 @@ namespace DPT.Engine.Scenes
             }
 
             var mesh = new Mesh();
+            mesh.Primitive = MeshPrimitive.Plane;
+            mesh.PrimitiveSize = width;
+            mesh.PrimitiveSegments = divisions;
             mesh.Vertices = vertices.ToArray();
             mesh.Indices = indices.ToArray();
             mesh.RecalculateBounds();

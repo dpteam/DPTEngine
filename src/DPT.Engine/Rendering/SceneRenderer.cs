@@ -55,6 +55,11 @@ namespace DPT.Engine.Rendering
         private D3D9PixelShader envMapPixelShader;
         private D3D9PixelShader envMapFogPixelShader;
 
+        private D3D9VertexShader particleVertexShader;
+        private D3D9PixelShader particlePixelShader;
+        private D3D9Texture particleTexture;
+        private VertexPositionColorTexture[] particleVertices = new VertexPositionColorTexture[0];
+
         private bool shadersReady;
         private bool disposed;
 
@@ -351,7 +356,7 @@ namespace DPT.Engine.Rendering
         // ---------------------------------------------------------------- frame
 
         /// <summary>
-        /// Draws one frame.
+        /// Draws one frame with the scene's own camera.
         ///
         /// The caller is responsible for BeginScene/EndScene and for the final
         /// Present; the renderer only issues the geometry.
@@ -360,25 +365,43 @@ namespace DPT.Engine.Rendering
         {
             if (disposed || scene == null) return;
 
+            var camera = scene.Camera ?? new Camera();
+            var aspect = device.Height > 0 ? (float)device.Width / device.Height : 1f;
+
+            device.SetViewport(0, 0, device.Width, device.Height);
+
+            RenderInternal(scene, camera, aspect);
+        }
+
+        /// <summary>
+        /// Draws one frame through a caller-supplied camera and aspect ratio.
+        ///
+        /// The timeline uses this: a 3D event renders into its own rectangle, so
+        /// the aspect ratio comes from the rectangle rather than the window, and
+        /// the camera may be animated by the event.
+        /// </summary>
+        internal void RenderWithCamera(Scene scene, Camera camera, float aspect)
+        {
+            if (disposed || scene == null) return;
+
+            RenderInternal(scene, camera ?? new Camera(), aspect);
+        }
+
+        private void RenderInternal(Scene scene, Camera camera, float aspect)
+        {
             opaque.Clear();
             transparent.Clear();
 
-            if (shadersReady)
-            {
-                InitializeShaders();
-            }
+            InitializeShaders();
 
-            PrepareCamera(scene);
+            PrepareCamera(camera, aspect);
             PrepareEnvironment(scene);
 
-            // Walk the tree from the roots so that a child inherits its parent's
-            // transform; nodes not reachable from a root are simply not drawn,
-            // which is what "detached" should mean.
             scene.UpdateTransforms();
 
             for (var i = 0; i < scene.RootNodes.Count; i++)
             {
-                Collect(scene, scene.Find(scene.RootNodes[i]), scene.RootNodes.Count > 0);
+                Collect(scene, scene.Find(scene.RootNodes[i]));
             }
 
             LastOpaqueCount = opaque.Count;
@@ -388,16 +411,15 @@ namespace DPT.Engine.Rendering
 
             if (transparent.Count > 0)
             {
-                SortBackToFront(transparent, scene.Camera.Position);
+                SortBackToFront(transparent, camera.Position);
                 DrawPass(transparent);
             }
+
+            DrawParticles(scene, camera);
         }
 
-        private void PrepareCamera(Scene scene)
+        private void PrepareCamera(Camera camera, float aspect)
         {
-            var camera = scene.Camera ?? new Camera();
-            var aspect = device.Height > 0 ? (float)device.Width / device.Height : 1f;
-
             var view = camera.CreateView();
             var projection = camera.CreateProjection(aspect);
 
@@ -408,15 +430,19 @@ namespace DPT.Engine.Rendering
             // fallback for a machine with no ps_2_0) the shader is unbound and the
             // transform state is what the hardware uses.
             //
-            // Setting both costs four register writes per frame and means the
-            // renderer does not have to branch on which path is active.
+            // Setting both costs four register writes per frame and saves the
+            // renderer from branching on which path is active.
             device.SetTransform(D3D9.Transform.View, ref view);
             device.SetTransform(D3D9.Transform.Projection, ref projection);
 
             device.SetVertexShaderConstant(D3D9.Registers.View, ref view);
             device.SetVertexShaderConstant(D3D9.Registers.Projection, ref projection);
 
-            device.SetViewport(0, 0, device.Width, device.Height);
+            // The viewport is deliberately NOT set here. The caller owns it: a 3D
+            // event renders into its own rectangle of the project's buffer, and the
+            // project's buffer is a different size from the window. Setting the
+            // viewport to the window size here made every 3D event draw into the
+            // top-left corner of the frame.
         }
 
         private void PrepareEnvironment(Scene scene)
@@ -460,7 +486,7 @@ namespace DPT.Engine.Rendering
             }
         }
 
-        private void Collect(Scene scene, SceneNode node, bool drawable)
+        private void Collect(Scene scene, SceneNode node)
         {
             if (node == null || !node.Visible) return;
 
@@ -481,8 +507,172 @@ namespace DPT.Engine.Rendering
 
             for (var i = 0; i < node.Children.Count; i++)
             {
-                Collect(scene, scene.Find(node.Children[i]), true);
+                Collect(scene, scene.Find(node.Children[i]));
             }
+        }
+
+        // ---------------------------------------------------------------- particles
+
+        /// <summary>
+        /// Draws every live particle as a camera-facing quad.
+        ///
+        /// Billboarded on the CPU rather than with a point sprite or a geometry
+        /// shader: point sprites have a driver-dependent maximum size, and
+        /// geometry shaders do not exist on the hardware this engine targets.
+        ///
+        /// Particles are blended and depth-tested but do not write depth, which is
+        /// the only way overlapping sparks look like light rather than like
+        /// cardboard cut-outs.
+        /// </summary>
+        private void DrawParticles(Scene scene, Camera camera)
+        {
+            if (!shadersReady || !scene.HasParticles) return;
+
+            if (particleVertexShader == null)
+            {
+                string source;
+                string entry;
+
+                ShaderLibrary.TryGetVertex("postexcolor", out source, out entry);
+                particleVertexShader = device.CompileVertexShader("particle.vs", source, entry);
+
+                ShaderLibrary.TryGetPixel("texturediffuse", out source, out entry);
+                particlePixelShader = device.CompilePixelShader("particle.ps", source, entry);
+
+                particleTexture = CreateParticleTexture();
+            }
+
+            var right = Vector3.Cross(camera.Forward, camera.Up);
+            right.Normalize();
+
+            var up = Vector3.Cross(right, camera.Forward);
+            up.Normalize();
+
+            device.SetVertexShader(particleVertexShader);
+            device.SetPixelShader(particlePixelShader);
+            device.SetTexture(0, particleTexture);
+            device.SetTexture(1, null);
+            device.SetFvf(VertexPositionColorTexture.Fvf);
+
+            device.SetRenderState(D3D9.RenderState.ZWriteEnable, 0u);
+            device.SetRenderState(D3D9.RenderState.ZEnable, 1u);
+            device.SetRenderState(D3D9.RenderState.AlphaBlendEnable, 1u);
+            device.SetRenderState(D3D9.RenderState.SrcBlend, (uint)D3D9.Blend.SourceAlpha);
+            device.SetRenderState(D3D9.RenderState.DestBlend, (uint)D3D9.Blend.One);
+            device.SetRenderState(D3D9.RenderState.CullMode, (uint)D3D9.Cull.None);
+
+            var identity = Matrix.Identity;
+            device.SetVertexShaderConstant(D3D9.Registers.World, ref identity);
+
+            for (var i = 0; i < scene.Nodes.Count; i++)
+            {
+                var emitter = scene.Nodes[i].Emitter;
+
+                if (emitter == null) continue;
+
+                var particles = emitter.Particles;
+
+                if (particles.Length == 0) continue;
+
+                if (particleVertices.Length < particles.Length * 6)
+                {
+                    particleVertices = new VertexPositionColorTexture[particles.Length * 6];
+                }
+
+                var count = 0;
+
+                for (var p = 0; p < particles.Length; p++)
+                {
+                    if (!particles[p].Alive) continue;
+
+                    ColorRgba colour;
+                    float size;
+                    emitter.Sample(ref particles[p], out colour, out size);
+
+                    if (size <= 0.0001f || colour.A == 0) continue;
+
+                    BuildQuad(particleVertices, count * 6, particles[p].Position,
+                        right, up, size, colour, particles[p].Rotation);
+
+                    count++;
+                }
+
+                if (count == 0) continue;
+
+                device.DrawPrimitiveUp(D3D9.PrimitiveType.TriangleList, (uint)(count * 2),
+                    particleVertices, VertexPositionColorTexture.SizeInBytes);
+            }
+
+            device.SetRenderState(D3D9.RenderState.ZWriteEnable, 1u);
+            device.SetRenderState(D3D9.RenderState.AlphaBlendEnable, 0u);
+        }
+
+        private static void BuildQuad(VertexPositionColorTexture[] target, int offset, Vector3 centre,
+            Vector3 right, Vector3 up, float size, ColorRgba colour, float rotationDegrees)
+        {
+            var rotation = MathHelper.ToRadians(rotationDegrees);
+            var cos = (float)Math.Cos(rotation);
+            var sin = (float)Math.Sin(rotation);
+
+            var axisX = (right * cos + up * sin) * size;
+            var axisY = (up * cos - right * sin) * size;
+
+            var packed = colour.ToD3DColor();
+
+            var topLeft = centre - axisX + axisY;
+            var topRight = centre + axisX + axisY;
+            var bottomRight = centre + axisX - axisY;
+            var bottomLeft = centre - axisX - axisY;
+
+            SetVertex(ref target[offset + 0], topLeft, packed, 0f, 0f);
+            SetVertex(ref target[offset + 1], topRight, packed, 1f, 0f);
+            SetVertex(ref target[offset + 2], bottomLeft, packed, 0f, 1f);
+
+            SetVertex(ref target[offset + 3], topRight, packed, 1f, 0f);
+            SetVertex(ref target[offset + 4], bottomRight, packed, 1f, 1f);
+            SetVertex(ref target[offset + 5], bottomLeft, packed, 0f, 1f);
+        }
+
+        private static void SetVertex(ref VertexPositionColorTexture vertex, Vector3 position,
+            uint colour, float u, float v)
+        {
+            vertex.X = position.X;
+            vertex.Y = position.Y;
+            vertex.Z = position.Z;
+            vertex.Color = colour;
+            vertex.U = u;
+            vertex.V = v;
+        }
+
+        /// <summary>
+        /// A soft radial blob, generated rather than shipped as a file.
+        ///
+        /// White with an alpha falloff, so a particle's colour comes from its
+        /// vertex colour and the texture only shapes the edge.
+        /// </summary>
+        private D3D9Texture CreateParticleTexture()
+        {
+            const int size = 32;
+
+            var pixels = new uint[size * size];
+            var centre = (size - 1) * 0.5f;
+
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    var dx = (x - centre) / centre;
+                    var dy = (y - centre) / centre;
+                    var distance = (float)Math.Sqrt(dx * dx + dy * dy);
+
+                    var alpha = distance >= 1f ? 0f : 1f - distance;
+                    alpha = alpha * alpha;
+
+                    pixels[y * size + x] = new ColorRgba(255, 255, 255, (byte)(alpha * 255f)).ToArgb();
+                }
+            }
+
+            return UploadTexture(-9999, size, size, pixels);
         }
 
         private void DrawPass(List<DrawItem> items)
@@ -491,7 +681,18 @@ namespace DPT.Engine.Rendering
             {
                 var item = items[i];
 
-                FaultGuard.Guard("renderer", "draw", delegate { DrawItemNow(item); });
+                // Guarded per item so one bad mesh cannot cost the whole frame, but
+                // the failure is logged rather than swallowed: a mesh that silently
+                // does not draw is the hardest kind of rendering bug to find.
+                try
+                {
+                    DrawItemNow(item);
+                }
+                catch (Exception error)
+                {
+                    EngineLog.Error("renderer", "Drawing '" + item.Node.Name + "' failed: " + error.Message);
+                    FaultGuard.Record("renderer", "draw:" + item.Node.Name, error);
+                }
             }
         }
 
@@ -500,6 +701,13 @@ namespace DPT.Engine.Rendering
             var buffers = GetMeshBuffers(item.Mesh);
 
             var world = item.Node.World;
+
+            EngineLog.Verbose("renderer", "draw '" + item.Node.Name + "' at (" +
+                                          world.M41.ToString("0.00") + ", " +
+                                          world.M42.ToString("0.00") + ", " +
+                                          world.M43.ToString("0.00") + ") verts " +
+                                          buffers.VertexCount + " tris " + buffers.TriangleCount);
+
             device.SetTransform(D3D9.Transform.World, ref world);
             device.SetVertexShaderConstant(D3D9.Registers.World, ref world);
 

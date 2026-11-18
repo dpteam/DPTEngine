@@ -286,12 +286,14 @@ float4    BlurParams  : register(c1);
 
 float4 main(float2 texCoord : TEXCOORD0) : COLOR
 {
-    float2 step = BlurParams.x;
+    // 'step' would shadow the HLSL intrinsic of the same name and fail to
+    // compile, so the offset is called something else.
+    float offset = BlurParams.x;
 
-    float4 sum = tex2D(Texture0, texCoord + float2( step, 0.0f));
-    sum += tex2D(Texture0, texCoord + float2(-step, 0.0f));
-    sum += tex2D(Texture0, texCoord + float2(0.0f,  step));
-    sum += tex2D(Texture0, texCoord + float2(0.0f, -step));
+    float4 sum = tex2D(Texture0, texCoord + float2( offset, 0.0f));
+    sum += tex2D(Texture0, texCoord + float2(-offset, 0.0f));
+    sum += tex2D(Texture0, texCoord + float2(0.0f,  offset));
+    sum += tex2D(Texture0, texCoord + float2(0.0f, -offset));
 
     return (sum * 0.25f) * GlobalColor;
 }

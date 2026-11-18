@@ -25,6 +25,7 @@ namespace DPT.Engine.Graphics
         internal const int DeviceNotReset = unchecked((int)0x88760869);
         internal const int NotAvailable = unchecked((int)0x8876086A);
         internal const int DriverInvalidCall = unchecked((int)0x8876086C);
+        internal const int WasStillDrawing = unchecked((int)0x8876021C);
 
         // ---------------------------------------------------------------- device
 
@@ -103,6 +104,7 @@ namespace DPT.Engine.Graphics
             internal const uint Discard = 0x00002000;
             internal const uint NoOverwrite = 0x00001000;
             internal const uint NoSysLock = 0x00002000;
+            internal const uint DoNotWait = 0x00001000;
         }
 
         internal enum Format : uint

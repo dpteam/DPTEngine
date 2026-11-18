@@ -43,7 +43,9 @@ namespace DPT.Engine.Graphics
         internal const int CreateIndexBuffer = 27;
         internal const int CreateRenderTarget = 28;
         internal const int CreateDepthStencilSurface = 29;
+        internal const int GetRenderTargetData = 32;
         internal const int StretchRect = 34;
+        internal const int CreateOffscreenPlainSurface = 36;
         internal const int SetRenderTarget = 37;
         internal const int SetDepthStencilSurface = 39;
         internal const int BeginScene = 41;
@@ -83,8 +85,13 @@ namespace DPT.Engine.Graphics
         internal const int SurfaceUnlockRect = 14;
 
         // IDirect3DTexture9
+        internal const int TextureGetSurfaceLevel = 18;
         internal const int TextureLockRect = 19;
         internal const int TextureUnlockRect = 20;
+
+        // IDirect3DQuery9
+        internal const int QueryIssue = 6;
+        internal const int QueryGetData = 7;
 
         // ID3D10Blob / ID3DBlob
         internal const int BlobGetBufferPointer = 3;
@@ -156,6 +163,13 @@ namespace DPT.Engine.Graphics
     internal delegate int CreateDepthStencilSurfaceDelegate(IntPtr device, uint width, uint height, uint format,
         uint multiSampleType, uint multiSampleQuality, [MarshalAs(UnmanagedType.Bool)] bool discard,
         out IntPtr surface, IntPtr sharedHandle);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    internal delegate int CreateOffscreenPlainSurfaceDelegate(IntPtr device, uint width, uint height,
+        uint format, uint pool, out IntPtr surface, IntPtr sharedHandle);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    internal delegate int GetRenderTargetDataDelegate(IntPtr device, IntPtr renderTarget, IntPtr destSurface);
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     internal delegate int StretchRectDelegate(IntPtr device, IntPtr sourceSurface, ref D3DRect sourceRect,
@@ -268,6 +282,9 @@ namespace DPT.Engine.Graphics
     /// delegate between them corrupts the stack on x86.
     /// </summary>
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    internal delegate int GetSurfaceLevelDelegate(IntPtr texture, uint level, out IntPtr surface);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     internal delegate int TextureLockRectDelegate(IntPtr texture, uint level, ref D3DLockedRect lockedRect,
         IntPtr rectangle, uint flags);
 
@@ -276,6 +293,15 @@ namespace DPT.Engine.Graphics
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     internal delegate int GetSurfaceDescDelegate(IntPtr surface, ref D3DSurfaceDescription description);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    internal delegate int CreateQueryDelegate(IntPtr device, uint type, out IntPtr query);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    internal delegate int QueryIssueDelegate(IntPtr query, uint flags);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    internal delegate int QueryGetDataDelegate(IntPtr query, IntPtr data, uint size, uint flags);
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     internal delegate IntPtr BlobGetPointerDelegate(IntPtr blob);
