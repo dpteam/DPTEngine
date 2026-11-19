@@ -13,8 +13,10 @@
 |  Runtime    EngineApp, Headless                              |
 |  Engine     TimelinePlayer, TemplateProject                  |
 |  Project    ProjectFile, ProjectSerializer, Effects          |
+|  Import     DmoReader (the Addict2 .dmo reader)              |
+|  Textures   TexGen (the texture recipe evaluator)            |
 |  Rendering  SceneRenderer, QuadRenderer, TextRenderer, BMP   |
-|  Scenes     Mesh, SceneGraph, ParticleEmitter                |
+|  Scenes     Mesh, SceneGraph, ParticleEmitter, PrimitiveGen  |
 |  Timeline   Spline, Key, Interpolation                       |
 |  Graphics   D3D9Device, interop, resources, shaders           |
 |  Win32      window, input, virtual keys, P/Invoke             |
@@ -155,6 +157,35 @@ Two details that bite:
   still bound makes every pixel outside that corner fail the depth test.
 * `display3d` sets the viewport and scissor to its own rectangle and restores them afterwards;
   `SceneRenderer` deliberately never sets the viewport itself.
+
+## Reading the original projects
+
+`.dmo` is a chunk stream: eight bytes of signature, then a flat sequence of
+`[id][int32 size][payload]` records ending in `END0`. Two properties make it worth reading
+directly rather than asking users to redo their work:
+
+* every record declares its own length, so a reader can verify after each one that it consumed
+  exactly that many bytes. `DmoReader` does, and a wrong struct size therefore fails on the record
+  that is wrong, naming the chunk and the byte counts. Porting the format is otherwise guesswork
+  across thirty-four record types;
+* the records build on each other (`OBJ4` is `OBJ3` plus a supershape block, `WRO5` is `WRO4`
+  plus two flags), so the version in the id is what tells the reader which fields are present.
+
+The reader keeps a small set of intermediate types that mirror the original structs, then
+converts them once into the engine's own model: worlds become scenes, world objects become
+nodes, events become effects. Keeping the two representations separate is what lets the mapping
+stay in one function and the binary layout stay in another.
+
+Two parts of the original need more than a struct copy:
+
+* **Textures are recipes, not pixels.** A `TEX1` record is a list of commands - "fractal plasma
+  into layer 0, colourise it, emboss, then make it the material" - and `TexGen` executes them
+  into a pixel array. All thirty-seven filters are ported, including MSVC's `rand()` and the
+  16-bit `pmullw` colour interpolation, because a texture that is merely similar is obviously
+  wrong on screen.
+* **Geometry is generated.** Most objects store five integers and a primitive id, so
+  `PrimitiveGenerator` rebuilds the mesh. The remaining ones store vertices and polygons
+  directly and are used as-is.
 
 ## COM vtable approach
 

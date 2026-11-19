@@ -47,7 +47,39 @@ namespace DPT.Engine.Project
                                       project.Scenes.Count + " scenes, " + project.Timeline.Count +
                                       " effects).");
 
-            return project;
+            return project;        }
+
+        /// <summary>
+        /// Loads a project in whichever format the file is.
+        ///
+        /// The engine speaks two formats: its own JSON, and the Addict2 binary that
+        /// every existing project was made with. Sniffing by signature rather than by
+        /// extension means a renamed file still opens, which matters because .dmo
+        /// files are routinely passed around without their original names.
+        /// </summary>
+        public static ProjectFile LoadAny(string path)
+        {
+            if (string.IsNullOrEmpty(path)) throw new ArgumentNullException("path");
+
+            var header = new byte[8];
+
+            using (var stream = File.OpenRead(path))
+            {
+                var read = stream.Read(header, 0, header.Length);
+
+                if (read < header.Length)
+                {
+                    throw new InvalidDataException("The file is too short to be a project: " + path);
+                }
+            }
+
+            if (Import.DmoReader.IsDmo(header))
+            {
+                EngineLog.Info("project", "Reading an Addict2 project: " + path);
+                return Import.DmoReader.Load(path);
+            }
+
+            return Load(path);
         }
 
         public static void Save(ProjectFile project, string path)
@@ -316,7 +348,6 @@ namespace DPT.Engine.Project
                     ReadTracks(animationJson.ArrayOf("tracks"), animation.Tracks);
                     scene.Animations.Add(animation);
                 }
-
                 ReadTracks(json.ArrayOf("cameraTracks"), scene.CameraTracks);
 
                 scene.RebuildHierarchy();

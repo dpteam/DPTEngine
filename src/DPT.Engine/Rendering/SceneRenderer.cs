@@ -155,9 +155,21 @@ namespace DPT.Engine.Rendering
             if (argb.Length < width * height) throw new ArgumentException("Pixel data is too short.", "argb");
 
             D3D9Texture existing;
-            if (textures.TryGetValue(key, out existing) && !existing.IsDisposed) return existing;
+            if (textures.TryGetValue(key, out existing) && !existing.IsDisposed)
+            {
+                // Re-uploading the same key is normal: the editor refreshes a texture
+                // whenever the user edits its recipe, and a texture that is unchanged
+                // must not be recreated every frame. But the *size* can change, and
+                // keeping the old surface then renders the wrong image - so a
+                // different size always replaces.
+                if (existing.Width == width && existing.Height == height) return existing;
+            }
 
             var levels = CountMipLevels(width, height);
+
+            EngineLog.Verbose("renderer", "Uploading texture " + key + " at " + width + "x" + height +
+                                          " with " + levels + " mip level(s).");
+
             var texture = device.CreateTexture(width, height, levels, false);
 
             try

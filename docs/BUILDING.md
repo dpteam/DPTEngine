@@ -87,10 +87,22 @@ dotnet build src/DPT.Engine.SelfTest/DPT.Engine.SelfTest.csproj
 .\src\DPT.Engine.SelfTest\bin\Debug\net40\dptengine-selftest.exe
 ```
 
-Eight checks - splines, JSON, mesh, scene graph, shader path, render, animation, readback - that
-run against a real device with a hidden 320x240 window and assert on pixels. Where the unit
+Nine checks - splines, JSON, mesh, scene graph, animation, shader path, render, readback and the
+imported scene - that run against a real device with a hidden 320x240 window. Where the unit
 tests prove the pieces, this proves they work together. It writes `selftest.log` into the data
 directory.
+
+Pass a substring to run only the matching checks, which is what you want when one of them is
+being debugged:
+
+```bat
+.\src\DPT.Engine.SelfTest\bin\Debug\net40\dptengine-selftest.exe render
+```
+
+The graphics checks share one window and one device, and they run in a fixed order, because
+creating several devices in one process is unreliable on some drivers and because readback is a
+one-shot diagnostic. Set `DPT_TEST_PROJECT` to a `.dptproj` or `.dmo` to have the render check
+draw a real imported project as well; without it that part is skipped and the rest still runs.
 
 ## Release build
 

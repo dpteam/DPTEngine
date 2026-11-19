@@ -11,6 +11,49 @@ every integer a project can contain.
 
 After loading, `ProjectFile.Normalize` repairs the document; see [Normalisation](#normalisation).
 
+## Reading the original Addict2 format
+
+The engine also reads the `.dmo` files the original editor produced, so existing work does not
+have to be redone. `ProjectSerializer.LoadAny` sniffs the first eight bytes and picks the
+reader, which means a renamed file still opens: the `.dmo` signature is the ASCII text
+`aDDict2P`.
+
+The format is a chunk stream - an eight byte signature, then a sequence of
+`[4 byte id][int32 size][payload]` records, terminated by `END0`. Every record carries its own
+size, and `DmoReader` checks after each one that it consumed exactly that many bytes. A wrong
+struct size therefore fails on the record that is wrong, with the byte counts, instead of
+corrupting the next nineteen. That self-check is what makes the format practical to port: the
+record sizes were confirmed against all nineteen projects that ship with the original sources.
+
+What the importer does with each part of the file:
+
+| Addict2 | Becomes |
+| --- | --- |
+| `TEX0`/`TEX1` texture recipes | Pixels, by running the recipe through the texture generator (37 filters) |
+| `SCN0`/`SCN1` mesh scenes | A merged mesh, with each object's matrix baked in |
+| `WRL0`-`WRL2` worlds | A `Scene`, with camera, fog and lighting flags |
+| `WRO0`-`WRO5` world objects | Scene nodes, including emitters and scene references |
+| `CAM0` camera splines | `cameraTracks` on the scene |
+| `WRA0`/`WOA0`-`WOA2` animations | Camera and object tracks |
+| `EVT0`-`EVT2` timeline events | Timeline effects |
+| `OBJ0`-`OBJ5` objects | Generated primitives or stored geometry, then baked into the mesh |
+
+Two details are worth knowing because they change what you see:
+
+* **Blend factors are stored the other way round.** The original calls
+  `glBlendFunc(DSTBlend, SRCBlend)`, so the field named `DSTBlend` is the OpenGL *source*
+  factor. The importer swaps them back. A stored pair of `0/0` is the editor's "never set"
+  default and becomes opaque, because taking `GL_ZERO` literally would draw nothing - which
+  is how eight of the nine objects in the tutorial project are stored.
+* **Object matrices are not transposed.** The original stores a row-major `float[4][4]` and
+  hands the same floats to `glMultMatrixf`, which reads column-major, so OpenGL uses the
+  transpose of the array as written. Working the two conventions through, the engine's
+  row-vector matrix is the row-major reading of the bytes, unchanged.
+
+Anything the importer does not model is recorded rather than dropped silently: map-transform
+modifiers, mesh smoothing and clones are kept as nodes with their type set, and deflectors and
+gravity wells become empty parent nodes that still pass their transform to their children.
+
 ## Top level
 
 | Field | Type | Default | Meaning |

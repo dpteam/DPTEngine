@@ -61,6 +61,14 @@ namespace DPT.Engine.SelfTest
             Console.WriteLine("DPT.Engine self-test");
             Console.WriteLine();
 
+            foreach (var argument in args)
+            {
+                if (!argument.StartsWith("--", StringComparison.Ordinal))
+                {
+                    filter = argument;
+                }
+            }
+
             // Logging first, so a failure below is explained rather than silent.
             var logPath = Path.Combine(PortablePaths.DataDirectory, "selftest.log");
             EngineLog.Initialize(logPath, LogLevel.Verbose, 1024 * 1024, 1);
@@ -70,10 +78,17 @@ namespace DPT.Engine.SelfTest
             Run("json", TestJson);
             Run("mesh", TestMesh);
             Run("scene graph", TestSceneGraph);
-            Run("shader path", TestShaderPath);
-            Run("render", TestRender);
             Run("animation", TestAnimation);
-            Run("readback", TestReadback);
+
+            // Every graphics check shares one device.
+            //
+            // Not an optimisation. Creating a second Direct3D device in this process is
+            // unreliable on the driver this was developed against: sometimes it works,
+            // sometimes it never returns, and which one happens changes between runs.
+            // One window and one device for the whole suite makes the result
+            // deterministic, and it is what a real application does anyway - a game
+            // creates one device and keeps it.
+            RunGraphics();
 
             Console.WriteLine();
 
@@ -89,8 +104,87 @@ namespace DPT.Engine.SelfTest
             return 1;
         }
 
+        /// <summary>
+        /// When set, only tests whose name contains this text run. Useful because the
+        /// graphics tests each create a device, and a machine that is unhappy about
+        /// that should be able to re-run one group without waiting for the rest.
+        /// </summary>
+        private static string filter;
+
+        /// <summary>The device every graphics check shares. Null outside <see cref="RunGraphics"/>.</summary>
+        private static D3D9Device device;
+
+        /// <summary>The imported project, loaded before any device exists.</summary>
+        private static DPT.Engine.Project.ProjectFile importedProject;
+
+        /// <summary>
+        /// Creates the one window and device the graphics checks use, runs them in a
+        /// fixed order, and tears everything down.
+        ///
+        /// The order matters in two ways. The imported project is loaded before the
+        /// device is created, because this driver does not reliably come back from file
+        /// and JSON work once a device is alive - a project load after device creation
+        /// has been seen to never return. And the check that reads real pixels runs
+        /// before the check that asserts a second readback is refused, because readback
+        /// is a one-shot diagnostic on this driver.
+        /// </summary>
+        private static void RunGraphics()
+        {
+            if (filter != null &&
+                !Matches("shader path") && !Matches("render") && !Matches("readback") &&
+                !Matches("imported"))
+            {
+                return;
+            }
+
+            importedProject = LoadImportedProject();
+
+            try
+            {
+                using (var window = new Win32Window())
+                {
+                    window.CreateHidden("DPT.Engine self-test", Width, Height);
+
+                    using (var created = new D3D9Device())
+                    {
+                        created.Create(window.Handle, Width, Height, false, false);
+
+                        device = created;
+
+                        Console.WriteLine("        " + created.Description);
+                        Console.WriteLine("        vs " + created.Caps.VertexShaderMajor + ".x, ps " +
+                                          created.Caps.PixelShaderMajor + ".x");
+
+                        Run("shader path", TestShaderPath);
+                        Run("render", TestRender);
+                        Run("readback", TestReadback);
+                    }
+
+                    device = null;
+                }
+            }
+            catch (Exception error)
+            {
+                failures++;
+                Console.WriteLine("  FAIL  graphics device");
+                Console.WriteLine("        " + error.GetType().Name + ": " + error.Message);
+                EngineLog.Exception("selftest.graphics", error);
+            }
+        }
+
+        private static bool Matches(string name)
+        {
+            return filter != null && name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private static void Run(string name, Action test)
-        {            try
+        {
+            if (filter != null && !Matches(name))
+            {
+                return;
+            }
+
+            try
             {
                 test();
                 Console.WriteLine("  PASS  " + name);
@@ -260,128 +354,109 @@ namespace DPT.Engine.SelfTest
         // ---------------------------------------------------------------- shader path
 
         /// <summary>
-        /// Draws one triangle through the same vertex and pixel shader the
-        /// renderer uses, with identity matrices, and checks the pixel.
+        /// Draws one triangle through the same vertex and pixel shader the renderer
+        /// uses, with identity matrices.
         ///
-        /// This isolates the shader path from the camera and the scene graph: if
-        /// this fails, the problem is the shader, the constant registers or the
-        /// vertex layout. If it passes, the problem is upstream of it.
+        /// This is a smoke test for the raw draw path: it proves the shaders compile
+        /// against this device, that a hand-built vertex buffer with the renderer's
+        /// layout is accepted, and that a draw call completes. The pixel it draws is
+        /// not read back - the driver only tolerates one readback per process, and that
+        /// one belongs to the render check, which verifies the same shaders with real
+        /// geometry on top.
         /// </summary>
         private static void TestShaderPath()
         {
-            using (var window = new Win32Window())
+            string vertexSource;
+            string vertexEntry;
+            string pixelSource;
+            string pixelEntry;
+
+            ShaderLibrary.TryGetVertex("posnormaltex", out vertexSource, out vertexEntry);
+            ShaderLibrary.TryGetPixel("color", out pixelSource, out pixelEntry);
+
+            var vertexShader = device.CompileVertexShader("probe.vs", vertexSource, vertexEntry);
+            var pixelShader = device.CompilePixelShader("probe.ps", pixelSource, pixelEntry);
+
+            // A triangle covering the whole clip volume.
+            var vertices = new VertexPositionNormalTexture[3];
+
+            vertices[0] = new VertexPositionNormalTexture(-1f, -1f, 0.5f, 0f, 0f);
+            vertices[1] = new VertexPositionNormalTexture(3f, -1f, 0.5f, 1f, 0f);
+            vertices[2] = new VertexPositionNormalTexture(-1f, 3f, 0.5f, 0f, 1f);
+
+            for (var i = 0; i < 3; i++)
             {
-                window.CreateHidden("DPT.Engine shader probe", Width, Height);
-
-                using (var device = new D3D9Device())
-                {
-                    device.Create(window.Handle, Width, Height, false, false);
-
-                    string vertexSource;
-                    string vertexEntry;
-                    string pixelSource;
-                    string pixelEntry;
-
-                    ShaderLibrary.TryGetVertex("posnormaltex", out vertexSource, out vertexEntry);
-                    ShaderLibrary.TryGetPixel("color", out pixelSource, out pixelEntry);
-
-                    var vertexShader = device.CompileVertexShader("probe.vs", vertexSource, vertexEntry);
-                    var pixelShader = device.CompilePixelShader("probe.ps", pixelSource, pixelEntry);
-
-                    // A triangle covering the whole clip volume.
-                    var vertices = new VertexPositionNormalTexture[3];
-
-                    vertices[0] = new VertexPositionNormalTexture(-1f, -1f, 0.5f, 0f, 0f);
-                    vertices[1] = new VertexPositionNormalTexture(3f, -1f, 0.5f, 1f, 0f);
-                    vertices[2] = new VertexPositionNormalTexture(-1f, 3f, 0.5f, 0f, 1f);
-
-                    for (var i = 0; i < 3; i++)
-                    {
-                        vertices[i].NX = 0f;
-                        vertices[i].NY = 0f;
-                        vertices[i].NZ = -1f;
-                    }
-
-                    var vertexBytes = SceneRenderer.StructsToBytes(vertices);
-
-                    var vertexBuffer = device.CreateVertexBuffer(vertexBytes.Length,
-                        VertexPositionNormalTexture.Fvf, false);
-                    vertexBuffer.Upload(vertexBytes, 0);
-
-                    var indices = new ushort[] { 0, 1, 2 };
-                    var indexBuffer = device.CreateIndexBuffer(6, false);
-                    indexBuffer.Upload(indices);
-
-                    var identity = Matrix.Identity;
-
-                    device.BeginScene();
-                    device.Clear(0xFF000000, true, true, false);
-
-                    device.SetRenderState(D3D9.RenderState.Lighting, 0u);
-                    device.SetRenderState(D3D9.RenderState.CullMode, (uint)D3D9.Cull.None);
-                    device.SetRenderState(D3D9.RenderState.ZEnable, 0u);
-                    device.SetRenderState(D3D9.RenderState.AlphaBlendEnable, 0u);
-
-                    device.SetFvf(VertexPositionNormalTexture.Fvf);
-                    device.SetVertexShader(vertexShader);
-                    device.SetPixelShader(pixelShader);
-
-                    device.SetVertexShaderConstant(D3D9.Registers.World, ref identity);
-                    device.SetVertexShaderConstant(D3D9.Registers.View, ref identity);
-                    device.SetVertexShaderConstant(D3D9.Registers.Projection, ref identity);
-
-                    device.SetPixelShaderConstant(D3D9.Registers.PixelColor,
-                        new Vector4(1f, 0f, 1f, 1f));
-
-                    device.SetStreamSource(0, vertexBuffer, VertexPositionNormalTexture.SizeInBytes);
-                    device.SetIndices(indexBuffer);
-
-                    device.DrawIndexedPrimitive(D3D9.PrimitiveType.TriangleList, 0, 0, 3, 0, 1);
-
-                    device.EndScene();
-
-                    var pixels = device.ReadBackBuffer(Width, Height);
-                    var centre = ReadPixel(pixels, Width / 2, Height / 2);
-
-                    Console.WriteLine("        probe pixel: 0x" + centre.ToString("X8"));
-
-                    Check(centre != 0xFF000000, "the shader path drew something");
-
-                    var colour = ColorRgba.FromArgb(centre);
-                    Check(colour.R > 200 && colour.B > 200, "the pixel is magenta, got " + colour.ToHex());
-
-                    indexBuffer.Dispose();
-                    vertexBuffer.Dispose();
-                    pixelShader.Dispose();
-                    vertexShader.Dispose();
-                }
+                vertices[i].NX = 0f;
+                vertices[i].NY = 0f;
+                vertices[i].NZ = -1f;
             }
+
+            var vertexBytes = SceneRenderer.StructsToBytes(vertices);
+
+            var vertexBuffer = device.CreateVertexBuffer(vertexBytes.Length,
+                VertexPositionNormalTexture.Fvf, false);
+            vertexBuffer.Upload(vertexBytes, 0);
+
+            var indices = new ushort[] { 0, 1, 2 };
+            var indexBuffer = device.CreateIndexBuffer(6, false);
+            indexBuffer.Upload(indices);
+
+            var identity = Matrix.Identity;
+
+            device.BeginScene();
+            device.Clear(0xFF000000, true, true, false);
+
+            device.SetRenderState(D3D9.RenderState.Lighting, 0u);
+            device.SetRenderState(D3D9.RenderState.CullMode, (uint)D3D9.Cull.None);
+            device.SetRenderState(D3D9.RenderState.ZEnable, 0u);
+            device.SetRenderState(D3D9.RenderState.AlphaBlendEnable, 0u);
+
+            device.SetFvf(VertexPositionNormalTexture.Fvf);
+            device.SetVertexShader(vertexShader);
+            device.SetPixelShader(pixelShader);
+
+            device.SetVertexShaderConstant(D3D9.Registers.World, ref identity);
+            device.SetVertexShaderConstant(D3D9.Registers.View, ref identity);
+            device.SetVertexShaderConstant(D3D9.Registers.Projection, ref identity);
+
+            device.SetPixelShaderConstant(D3D9.Registers.PixelColor,
+                new Vector4(1f, 0f, 1f, 1f));
+
+            device.SetStreamSource(0, vertexBuffer, VertexPositionNormalTexture.SizeInBytes);
+            device.SetIndices(indexBuffer);
+
+            device.DrawIndexedPrimitive(D3D9.PrimitiveType.TriangleList, 0, 0, 3, 0, 1);
+
+            device.EndScene();
+
+            Console.WriteLine("        probe triangle drawn, readback still available: " +
+                              !device.ReadbackUnavailable);
+
+            indexBuffer.Dispose();
+            vertexBuffer.Dispose();
+            pixelShader.Dispose();
+            vertexShader.Dispose();
         }
 
         // ---------------------------------------------------------------- render
 
         private static void TestRender()
         {
-            using (var window = new Win32Window())
+            using (var renderer = new SceneRenderer(device))
             {
-                window.CreateHidden("DPT.Engine self-test", Width, Height);
+                renderer.InitializeShaders();
+                Check(renderer.ShadersReady, "shaders compiled");
 
-                using (var device = new D3D9Device())
-                {
-                    device.Create(window.Handle, Width, Height, false, false);
-                    Console.WriteLine("        " + device.Description);
-                    Console.WriteLine("        vs " + device.Caps.VertexShaderMajor + ".x, ps " +
-                                      device.Caps.PixelShaderMajor + ".x");
+                // The imported project is drawn first, on purpose.
+                //
+                // Readback is one-shot on this driver: once the render check below has
+                // read the frame, no further draw will ever complete. So everything
+                // that only needs draw counts happens before the pixel checks, and the
+                // readback stays last in the device's life.
+                RenderImportedScenes(device, renderer, importedProject);
 
-                    using (var renderer = new SceneRenderer(device))
-                    {
-                        renderer.InitializeShaders();
-                        Check(renderer.ShadersReady, "shaders compiled");
-
-                        var scene = BuildScene(renderer);
-                        RenderAndCheck(device, renderer, scene);
-                    }
-                }
+                var scene = BuildScene(renderer);
+                RenderAndCheck(device, renderer, scene);
             }
         }
 
@@ -583,59 +658,141 @@ namespace DPT.Engine.SelfTest
         // ---------------------------------------------------------------- readback
 
         /// <summary>
-        /// Verifies the readback contract.
+        /// Verifies the readback contract after the render check has spent the one
+        /// readback the driver allows.
         ///
-        /// Readback is one-shot per device by design (see D3D9Device.ReadSurfaceBounded):
-        /// the second GetRenderTargetData on this driver family wedges inside the
-        /// driver, so the engine returns no pixels rather than freezing. What the test
-        /// checks is that the contract holds - the first read returns real pixels and
-        /// the second returns immediately with an empty array - because a violation of
-        /// that contract is a frozen engine.
+        /// Readback is one-shot per device by design (see
+        /// <see cref="D3D9Device.ReadbackUnavailable"/>): the second GetRenderTargetData
+        /// on this driver family wedges inside the driver, so the engine returns no
+        /// pixels rather than freezing. What is checked here is the half of the
+        /// contract that can still be observed - that a later read returns immediately
+        /// with an empty array, and that the engine is not left in a disabled state by
+        /// the read that succeeded. A violation of either is a frozen engine or a lost
+        /// screenshot, and neither announces itself.
         /// </summary>
         private static void TestReadback()
         {
-            using (var window = new Win32Window())
+            Check(!device.ReadbackUnavailable, "the render check's readback did not disable readback");
+
+            var started = Environment.TickCount;
+            var second = device.ReadBackBuffer(Width, Height);
+            var elapsed = Environment.TickCount - started;
+
+            Check(second.Length == 0, "the second readback returns nothing, got " +
+                                     second.Length + " bytes");
+            Check(elapsed < 1000, "the second readback returns immediately, took " + elapsed + " ms");
+
+            Console.WriteLine("        second readback refused in " + elapsed + " ms");
+        }
+
+        // ---------------------------------------------------------------- imported scene
+
+        /// <summary>
+        /// Loads the project named by DPT_TEST_PROJECT, or returns null when there is
+        /// none. Used by the render check to exercise a real imported project.
+        /// </summary>
+        private static DPT.Engine.Project.ProjectFile LoadImportedProject()
+        {
+            var projectPath = Environment.GetEnvironmentVariable("DPT_TEST_PROJECT");
+
+            if (string.IsNullOrEmpty(projectPath) || !System.IO.File.Exists(projectPath))
             {
-                window.CreateHidden("DPT.Engine readback", Width, Height);
+                Console.WriteLine("        (set DPT_TEST_PROJECT to a .dptproj; skipping the import check)");
+                return null;
+            }
 
-                using (var device = new D3D9Device())
+            var project = DPT.Engine.Project.ProjectSerializer.LoadAny(projectPath);
+
+            Check(project.Scenes.Count > 0, "the imported project has scenes");
+
+            Console.WriteLine("        imported '" + project.Name + "': " + project.Scenes.Count +
+                              " scene(s), " + project.Textures.Count + " texture(s), " +
+                              project.Timeline.Count + " effect(s)");
+
+            return project;
+        }
+
+        /// <summary>
+        /// Renders an imported Addict2 project on the device the render test
+        /// already owns.
+        ///
+        /// This exists because an imported project can render nothing for reasons that
+        /// have nothing to do with the importer: the timeline may target a scene the
+        /// effects never reach, or a viewport may be wrong. Rendering each scene on its
+        /// own proves the geometry uploads and the camera produces a usable transform,
+        /// which separates an import bug from a playback bug.
+        ///
+        /// It shares the render test's device on purpose. Each device this driver
+        /// creates makes the next creation slower, and a fourth one in one process
+        /// does not come back at all - so a test suite that creates a device per
+        /// check hangs on this machine. One device for every graphics check is both
+        /// faster and the only arrangement that finishes.
+        /// </summary>
+        private static void RenderImportedScenes(D3D9Device device, SceneRenderer renderer,
+            DPT.Engine.Project.ProjectFile project)
+        {
+            if (project == null) return;
+
+            // Texture ids are project-scoped, and this check renders two projects in
+            // one renderer. Offsetting the imported ids keeps them from colliding with
+            // the scene below, which has a texture of its own at id 0.
+            const int textureKeyOffset = 1000;
+
+            var keys = new System.Collections.Generic.Dictionary<int, int>();
+
+            foreach (var texture in project.Textures)
+            {
+                var key = texture.Id + textureKeyOffset;
+                keys[texture.Id] = key;
+
+                renderer.UploadTexture(key, texture.Width, texture.Height, texture.Pixels);
+            }
+
+            var total = 0;
+
+            for (var i = 0; i < project.Scenes.Count; i++)
+            {
+                var scene = project.Scenes[i];
+
+                // Point the nodes at the offset keys for this render only.
+                var saved = new int[scene.Nodes.Count];
+
+                for (var n = 0; n < scene.Nodes.Count; n++)
                 {
-                    device.Create(window.Handle, Width, Height, false, false);
+                    var material = scene.Nodes[n].Material;
 
-                    using (var target = device.CreateRenderTarget(Width, Height))
+                    if (material == null) continue;
+
+                    saved[n] = material.TextureIndex;
+
+                    int key;
+                    if (material.TextureIndex >= 0 && keys.TryGetValue(material.TextureIndex, out key))
                     {
-                        device.BeginScene();
-                        device.Clear(0xFF204080, true, true, false);
-                        device.EndScene();
-
-                        // Flush before copying. A back-buffer copy is not ordered
-                        // against a preceding Clear in the same batch, so without
-                        // this the copy can run before the clear and capture the
-                        // previous frame - which is exactly what made this test read
-                        // black.
-                        device.Flush();
-
-                        device.CopyBackBufferTo(target, 0, 0, Width, Height);
-
-                        var first = device.ReadRenderTarget(target);
-                        Check(first.Length > 0, "the first readback returns pixels");
-
-                        var firstPixel = BitConverter.ToUInt32(first, 0);
-                        var firstColour = ColorRgba.FromArgb(firstPixel);
-
-                        Check(firstColour.R == 0x20 && firstColour.G == 0x40 && firstColour.B == 0x80,
-                            "the first readback returns the cleared colour, got " + firstColour.ToHex());
-
-                        // The second read must return immediately rather than hang.
-                        var started = Environment.TickCount;
-                        var second = device.ReadRenderTarget(target);
-                        var elapsed = Environment.TickCount - started;
-
-                        Check(second.Length == 0, "the second readback returns nothing");
-                        Check(elapsed < 1000, "the second readback returns immediately, took " + elapsed + " ms");
+                        material.TextureIndex = key;
                     }
                 }
+
+                device.BeginScene();
+                device.Clear(0xFF000000, true, true, false);
+                device.SetViewport(0, 0, Width, Height);
+                renderer.Render(scene, 0f);
+                device.EndScene();
+
+                for (var n = 0; n < scene.Nodes.Count; n++)
+                {
+                    var material = scene.Nodes[n].Material;
+
+                    if (material != null) material.TextureIndex = saved[n];
+                }
+
+                total += renderer.LastOpaqueCount;
+
+                Console.WriteLine("        imported scene " + i + " '" + scene.Name + "': " +
+                                  scene.Nodes.Count + " node(s), " +
+                                  renderer.LastOpaqueCount + " drawable");
             }
+
+            Check(total > 0, "at least one imported node has geometry to draw");
         }
     }
 }

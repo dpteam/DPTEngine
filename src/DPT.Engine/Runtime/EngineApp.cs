@@ -174,7 +174,7 @@ namespace DPT.Engine.Runtime
                         return null;
                     }
 
-                    return ProjectSerializer.Load(projectPath);
+                    return ProjectSerializer.LoadAny(projectPath);
                 }
                 catch (Exception error)
                 {

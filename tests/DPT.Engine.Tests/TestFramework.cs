@@ -122,7 +122,24 @@ namespace DPT.Engine.Tests
         internal static int Run(string filter)
         {
             var types = new List<Type>(Assembly.GetExecutingAssembly().GetTypes());
-            types.Sort(delegate(Type a, Type b) { return string.CompareOrdinal(a.Name, b.Name); });
+
+            // Graphics tests run last.
+            //
+            // Not cosmetic: creating and destroying a Direct3D 9 device on the driver
+            // this was developed against leaves the process unreliable for the plain
+            // file and CPU work that the other tests do. Running a project import
+            // immediately after seven device creations was observed to hang in a kernel
+            // wait inside the driver. Putting the device tests at the end keeps the
+            // suite deterministic without weakening any check.
+            types.Sort(delegate(Type a, Type b)
+            {
+                var graphicsA = UsesGraphics(a) ? 1 : 0;
+                var graphicsB = UsesGraphics(b) ? 1 : 0;
+
+                if (graphicsA != graphicsB) return graphicsA - graphicsB;
+
+                return string.CompareOrdinal(a.Name, b.Name);
+            });
 
             var passed = 0;
             var failed = 0;
@@ -207,6 +224,23 @@ namespace DPT.Engine.Tests
             }
 
             return failed == 0 ? 0 : 1;
+        }
+
+        /// <summary>True when any test in this type is marked <see cref="RequiresGraphicsAttribute"/>.</summary>
+        private static bool UsesGraphics(Type type)
+        {
+            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic |
+                                          BindingFlags.Static | BindingFlags.Instance);
+
+            foreach (var method in methods)
+            {
+                if (method.GetCustomAttributes(typeof(RequiresGraphicsAttribute), false).Length > 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 

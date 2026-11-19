@@ -6,6 +6,8 @@
 using System;
 using System.IO;
 
+using DPT.Engine.Import;
+using DPT.Engine.Project;
 using DPT.Engine.Runtime;
 using DPT.Engine.Shared;
 using DPT.Engine.Shared.Diagnostics;
@@ -46,6 +48,8 @@ namespace DPT.Engine
             SetErrorMode(SemFailCriticalErrors | SemNoGpfaultErrorBox |
                          SemNoAlignmentFaultExcept | SemNoOpenFileErrorBox);
             string projectPath = null;
+            string importPath = null;
+            string exportPath = null;
             var logLevel = LogLevel.Info;
             var headless = false;
 
@@ -56,6 +60,18 @@ namespace DPT.Engine
                 if (argument.StartsWith("--log-level=", StringComparison.OrdinalIgnoreCase))
                 {
                     logLevel = ParseLevel(argument.Substring("--log-level=".Length));
+                    continue;
+                }
+
+                if (argument.StartsWith("--import=", StringComparison.OrdinalIgnoreCase))
+                {
+                    importPath = argument.Substring("--import=".Length);
+                    continue;
+                }
+
+                if (argument.StartsWith("--export=", StringComparison.OrdinalIgnoreCase))
+                {
+                    exportPath = argument.Substring("--export=".Length);
                     continue;
                 }
 
@@ -95,6 +111,11 @@ namespace DPT.Engine
             EngineLog.Info("startup", "Data directory: " + PortablePaths.DataDirectory);
             EngineLog.Info("startup", "Log file: " + EngineLog.FilePath);
 
+            if (!string.IsNullOrEmpty(importPath))
+            {
+                return ImportProject(importPath, exportPath);
+            }
+
             if (headless)
             {
                 return Headless.Run(projectPath);
@@ -106,8 +127,55 @@ namespace DPT.Engine
             }
         }
 
-        private static LogLevel ParseLevel(string text)
+        /// <summary>
+        /// Converts an Addict2 .dmo project into the engine's own format.
+        ///
+        /// This is the migration path for everything made with the original editor:
+        /// the importer reads the chunked binary file, bakes the procedural textures,
+        /// regenerates the primitive geometry, and writes a .dptproj the editor and
+        /// the runtime both understand.
+        /// </summary>
+        private static int ImportProject(string input, string output)
         {
+            try
+            {
+                if (!File.Exists(input))
+                {
+                    Console.Error.WriteLine("No such file: " + input);
+                    return 1;
+                }
+
+                Console.WriteLine("Importing " + input);
+
+                var project = DmoReader.Load(input);
+
+                if (string.IsNullOrEmpty(output))
+                {
+                    output = Path.ChangeExtension(input, ".dptproj");
+                }
+
+                ProjectSerializer.Save(project, output);
+
+                Console.WriteLine("  scenes   : " + project.Scenes.Count);
+                Console.WriteLine("  textures : " + project.Textures.Count);
+                Console.WriteLine("  effects  : " + project.Timeline.Count);
+                Console.WriteLine("  duration : " + project.Duration + " frames at " +
+                                  project.FramesPerSecond + " fps");
+                Console.WriteLine("Wrote " + output);
+
+                EngineLog.Info("import", "Imported " + input + " to " + output + ".");
+
+                return 0;
+            }
+            catch (Exception error)
+            {
+                EngineLog.Exception("import", error);
+                Console.Error.WriteLine("Import failed: " + error.Message);
+                return 1;
+            }
+        }
+
+        private static LogLevel ParseLevel(string text)        {
             switch ((text ?? "").ToLowerInvariant())
             {
                 case "verbose": return LogLevel.Verbose;
@@ -123,9 +191,11 @@ namespace DPT.Engine
             Console.WriteLine(Branding.Title);
             Console.WriteLine();
             Console.WriteLine("Usage:");
-            Console.WriteLine("  dptengine [project]            play a project (or the built-in template)");
+            Console.WriteLine("  dptengine [project]            play a .dptproj or an Addict2 .dmo");
             Console.WriteLine("  dptengine --headless           verify a project without a window");
             Console.WriteLine("  dptengine --project=FILE       the project to play or verify");
+            Console.WriteLine("  dptengine --import=FILE.dmo    convert an Addict2 project to .dptproj");
+            Console.WriteLine("  dptengine --export=FILE        where the import is written");
             Console.WriteLine("  dptengine --log-level=LEVEL    verbose, info, warning or error");
             Console.WriteLine();
             Console.WriteLine("Keys:");

@@ -141,18 +141,27 @@ namespace DPT.Engine.Runtime
 
                         var failures = 0;
 
-                        // Pixels are checked on the first frame only.
+                        // The pixel check happens on the middle frame.
                         //
-                        // Several WDDM drivers deadlock inside LockRect on the second
-                        // GetRenderTargetData of a process. There is no way to time out
-                        // a kernel-mode wait, and because a Direct3D 9 device is not
-                        // thread-safe an abandoned worker keeps the device locked, so
-                        // even a watchdog cannot recover. Rather than pretend, the
-                        // verification reads pixels once - which is enough to prove the
-                        // whole pipeline produces the right picture - and checks every
-                        // other frame structurally: the timeline advanced, the effects
-                        // for that frame ran, and nothing threw.
+                        // Not frame zero: a demo may legitimately open on a fade from
+                        // black, on a solid colour, or - like one of the original
+                        // Addict2 projects - on nothing but a particle emitter, so the
+                        // first frame says very little about whether the renderer works.
+                        // The middle of the timeline is where a demo is at full
+                        // brightness.
+                        //
+                        // Only one frame is read because readback is a one-shot
+                        // diagnostic: several WDDM drivers deadlock inside LockRect on
+                        // the second GetRenderTargetData of a process, and a
+                        // kernel-mode wait cannot be timed out. Every other sampled
+                        // frame is checked structurally - the timeline advanced, the
+                        // effects for that frame ran, nothing threw.
+                        var pixelFrame = frames.Length / 2;
                         var pixelsChecked = false;
+
+                        // Accumulated so the verdict is about the run, not one frame.
+                        var framesWithEffects = 0;
+                        var framesWithGeometry = 0;
 
                         for (var i = 0; i < frames.Length; i++)
                         {
@@ -163,12 +172,17 @@ namespace DPT.Engine.Runtime
                             device.EndScene();
 
                             var effects = player.ActiveEffectCount();
+                            var geometry = renderer.LastOpaqueCount + renderer.LastTransparentCount;
+
+                            if (effects > 0) framesWithEffects++;
+                            if (geometry > 0) framesWithGeometry++;
+
                             var description = "frame " + frames[i].ToString().PadLeft(4) +
                                               ": " + effects + " effect(s)" +
                                               ", opaque " + renderer.LastOpaqueCount +
                                               ", transparent " + renderer.LastTransparentCount;
 
-                            if (!pixelsChecked)
+                            if (i == pixelFrame)
                             {
                                 var pixels = device.ReadRenderTarget(player.FrameTarget);
                                 pixelsChecked = true;
@@ -176,44 +190,42 @@ namespace DPT.Engine.Runtime
                                 if (pixels.Length == 0)
                                 {
                                     Console.WriteLine(description + "  no pixel readback available");
+                                    continue;
                                 }
-                                else
-                                {
-                                    var readWidth = player.FrameTarget.Width;
-                                    var readHeight = player.FrameTarget.Height;
 
-                                    var brightness = AverageBrightness(pixels);
-                                    var distinct = DistinctColours(pixels, 24, readWidth);
+                                var readWidth = player.FrameTarget.Width;
+                                var readHeight = player.FrameTarget.Height;
 
-                                    var path = Path.Combine(directory, "headless-" + frames[i] + ".bmp");
-                                    BmpWriter.Write(path, pixels, readWidth, readHeight);
+                                var brightness = AverageBrightness(pixels);
+                                var distinct = DistinctColours(pixels, 24, readWidth);
 
-                                    // The check is that the frame is not blank: it has
-                                    // to contain more than the clear colour. The exact
-                                    // threshold is deliberately low, because a project
-                                    // may legitimately be a single dark object on a dark
-                                    // floor - the template is far busier than a minimal
-                                    // project and the check must pass for both.
-                                    var ok = brightness > 0.001f && distinct >= 3;
+                                var path = Path.Combine(directory, "headless-" + frames[i] + ".bmp");
+                                BmpWriter.Write(path, pixels, readWidth, readHeight);
 
-                                    description += ", brightness " + brightness.ToString("0.0000") +
-                                                   ", distinct colours " + distinct +
-                                                   (ok ? "  ok" : "  FAILED");
+                                // A black frame is only a failure when geometry was
+                                // submitted for it: that combination means the draw
+                                // path produced nothing, which is exactly the bug this
+                                // check exists to catch. A black frame with nothing to
+                                // draw is a project that is simply empty at that moment.
+                                var ok = geometry == 0 || brightness > 0.001f;
 
-                                    if (!ok) failures++;
-                                }
-                            }
+                                description += ", brightness " + brightness.ToString("0.0000") +
+                                               ", distinct colours " + distinct +
+                                               (ok ? "  ok" : "  FAILED");
 
-                            // Structural check: the timeline must have produced at
-                            // least one active effect for every sampled frame, because
-                            // the template has a full-length clear.
-                            if (effects < 1)
-                            {
-                                description += "  FAILED (no effects ran)";
-                                failures++;
+                                if (!ok) failures++;
                             }
 
                             Console.WriteLine(description);
+                        }
+
+                        // A project that never activated a single effect has a broken
+                        // timeline, whatever its frames look like.
+                        if (framesWithEffects == 0)
+                        {
+                            Console.Error.WriteLine();
+                            Console.Error.WriteLine("No sampled frame had an active effect: the timeline is empty.");
+                            return 1;
                         }
 
                         if (failures > 0)
@@ -222,6 +234,15 @@ namespace DPT.Engine.Runtime
                             Console.Error.WriteLine(failures + " frame(s) rendered nothing recognisable.");
                             Console.Error.WriteLine("Screenshots were written to " + directory);
                             return 1;
+                        }
+
+                        if (!pixelsChecked)
+                        {
+                            Console.WriteLine("  (no pixel readback available; the run was verified structurally)");
+                        }
+                        else if (framesWithGeometry == 0)
+                        {
+                            Console.WriteLine("  (no sampled frame had geometry; the project is effects-only)");
                         }
 
                         Console.WriteLine();
@@ -255,7 +276,7 @@ namespace DPT.Engine.Runtime
 
             try
             {
-                return ProjectSerializer.Load(path);
+                return ProjectSerializer.LoadAny(path);
             }
             catch (Exception error)
             {

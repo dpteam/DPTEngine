@@ -54,11 +54,29 @@ and the first version that plays a project end to end.
 * `Headless`: a windowless verification pass that round-trips the project, renders frames across
   the timeline, checks brightness and colour variety, and writes the checked frame as a BMP.
 
+**Importing the original projects (`DPT.Engine.Import`)**
+
+* `DmoReader`: reads the Addict2 `.dmo` chunk stream - 34 chunk types across textures, mesh
+  scenes, objects, worlds, world objects, cameras, spline animations and timeline events - and
+  converts them into a `ProjectFile`. Every chunk is checked against its declared length after it
+  is read, so a wrong struct size fails on the record that is wrong instead of corrupting the
+  next nineteen.
+* `TexGen`: the texture recipe evaluator, all 37 filters, ported from `TexGen2.cpp` including its
+  MSVC `rand()`, its 16-bit `pmullw` colour interpolation and its saturating pack.
+* `PrimitiveGenerator`: the procedural object generators - box, sphere, cylinder, cone, plane,
+  circle, supershape, plus loft, fur, arc and line helpers - ported from `ObjectGenerators.cpp`.
+* `ProjectSerializer.LoadAny` sniffs the file signature, so a `.dmo` plays directly and a renamed
+  file still opens.
+* `dptengine --import=FILE.dmo --export=FILE.dptproj` converts a project for editing.
+
 **Tooling**
 
-* 38 unit and interop tests running on .NET Framework 4.0 against a real device, with graphics
+* 40 unit and interop tests running on .NET Framework 4.0 against a real device, with graphics
   tests skipped rather than failed on machines without one.
-* `dptengine-selftest`: eight checks that render a real frame and assert on specific pixels.
+* `dptengine-selftest`: eight checks that render a real frame and assert on specific pixels,
+  including an imported Addict2 project when `DPT_TEST_PROJECT` names one.
+* `ImportTests`: parses all nineteen projects that ship with the original sources and asserts that
+  the result survives a save and reload.
 * Master server project: configuration, session directory, project catalogue and relay
   components, sharing the wire protocol by source link.
 
@@ -118,15 +136,28 @@ Bugs found by the headless run, the self-test and the unit tests, all fixed in t
   array immediately and the engine keeps running.
 * **A 3D effect drew into a corner.** The renderer set the viewport to the window size instead of
   leaving it to the caller; `display3d` now sets and restores its own rectangle and scissor.
+* **Imported objects were transposed twice.** `.dmo` matrices were transposed on load because the
+  original hands row-major floats to `glMultMatrixf`; working the conventions through, the engine's
+  row-vector matrix is the row-major reading, so the transpose had to go.
+* **Imported objects were culled away.** Addict2 leaves face culling off; the engine culls, so an
+  imported mesh vanished entirely. Imported materials are now two-sided.
+* **Imported blend factors were inverted.** The original passes `glBlendFunc(DSTBlend, SRCBlend)`,
+  so the stored fields are named the other way round from the call. A stored `0/0` - the editor's
+  unset default - is now opaque instead of drawing nothing.
+* **Every older project's 3D scene was dropped.** The `display3d` payload is 28 bytes in the
+  original event layout and 29 in the later one; requiring 29 rejected all the older files.
+* **A texture re-upload at a new size was ignored.** `UploadTexture` returned the existing surface
+  whenever the key matched, so a texture whose resolution changed kept the old image.
 
 ### Known limitations
 
 * No audio.
 * No networking in the runtime; the protocol and client exist in the shared assembly and the
   master is a separate project, but nothing in the runtime connects.
-* No editor and no launcher; `DPTEngine.slnx` lists both, so the solution build fails.
+* The editor's preview is a layout schematic rather than a render.
 * Screenshots and pixel readback work once per device, as a workaround for the driver bug above.
-* Colours do not survive a save/load round trip: the writer emits `#RRGGBBAA`, the reader expects
-  `#AARRGGBB`.
 * `display3d` stores a camera index that is not used; a scene has one camera.
-* `shading` is stored but not honoured; lighting is disabled globally.
+* `shading` is stored but not honoured; the renderer picks its pixel shader from whether a
+  texture or an environment map is present.
+* The importer does not model deflectors, gravity wells, per-vertex colours or map-transform
+  modifiers; they are recorded, not applied.

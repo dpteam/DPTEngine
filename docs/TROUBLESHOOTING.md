@@ -76,6 +76,32 @@ never reads back.
 instead of reused. It is a debugging aid for investigating the driver bug; it does not bypass the
 one-shot rule.
 
+## A texture upload wedges the process
+
+**Symptom.** A project that has large procedural textures stops after
+`renderer: Uploading texture N at WxH with M mip level(s).` in the verbose log, with no error, no
+crash, no CPU use and no window. It happens on the same project every time and on no other.
+
+**Cause.** The same class of driver defect as the readback one: `LockRect` on a texture mip level
+never returns, inside the driver, holding the device's internal lock. The evidence that it is the
+driver and not the upload code is that the identical code path - same pool, same mip count, same
+row copy - succeeds for other projects in the same run, and that the exact call it stops in moves
+between runs of the same file.
+
+**What you can do.** Nothing in-process: a kernel wait cannot be timed out, and a Direct3D 9
+device is not thread-safe, so a watchdog cannot recover it. Workarounds, in order of preference:
+
+* run that project on a machine with a different driver, or with the reference rasteriser
+  (`D3D9Device` falls back to `REF` when `HAL` fails);
+* import the project with `--import` and edit the texture resolutions down in the editor before
+  playing it;
+* lower the mip count in `SceneRenderer.CountMipLevels` while investigating.
+
+If you are porting this engine and hit it often, the structural fix is to build textures in a
+`Pool.SystemMem` texture and hand them over with a single `UpdateTexture` call, which replaces N
+`LockRect` calls with one driver call. That is not implemented here because the failure cannot be
+reproduced reliably enough to prove the fix.
+
 ## A render target bound as a texture crashes
 
 **Symptom.** The first frame that composites a post-process crashes inside the driver, or the

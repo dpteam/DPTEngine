@@ -24,9 +24,10 @@ corrupt object in a project disables that subsystem and the rest keeps running.
 | Animation | 1D splines with step, linear, Hermite, Catmull-Rom, B-spline, sine, saw and square interpolation, sampled at seconds |
 | Timeline | Nine effect types, each active over a frame span with an animatable rectangle in an 800x600 virtual space |
 | Project | JSON file with embedded textures, scenes, animations and the timeline; hand editable and diffable in git |
+| Import | Reads the original Addict2 `.dmo` binary format, including procedural textures and generated primitives, and converts it to a `.dptproj` |
 | Playback | Fixed-step loop at the project frame rate, off-screen project buffer, letterboxed presentation, F1/F2/F11/F12 keys |
 | Diagnostics | `System.Diagnostics.Trace` logging with file rotation and an in-memory ring, subsystem state tracking, crash reports |
-| Tooling | 38 unit and interop tests (the graphics ones run against a real device), a headless verification pass, a self-test executable |
+| Tooling | 40 unit and interop tests (the graphics ones run against a real device), a headless verification pass, a self-test executable |
 
 ## Requirements
 
@@ -57,8 +58,13 @@ Command line:
 | --- | --- |
 | `[project]` | Project file to play. Missing or broken falls back to the built-in template |
 | `--headless` | Run the verification pass instead of opening a window |
+| `--import=FILE.dmo` | Convert an original Addict2 project to `.dptproj` and exit |
+| `--export=FILE` | Where the import is written (default: alongside the input) |
 | `--log-level=LEVEL` | `verbose`, `info`, `warning` or `error` (default `info`) |
 | `--help`, `-h`, `/?` | Print usage |
+
+A `.dmo` file plays directly too, so `dptengine demo.dmo` works without converting first.
+`--import` exists for the cases where you want a file the editor can open and edit.
 
 ## The template demo
 
@@ -151,6 +157,10 @@ Working today:
 * Splines and scene/camera animation.
 * All nine timeline effects, the JSON project format with embedded textures, save and load
   with normalisation and repair.
+* The Addict2 importer: the original chunked `.dmo` format, all 34 chunk types, the texture
+  recipe evaluator (37 filters) and the primitive generators. All nineteen projects that ship
+  with the original sources parse, and the chunk-length self-check verifies every struct size
+  against real data rather than against a hand-written fixture.
 * Timeline playback into an off-screen buffer with letterboxing, the overlay, screenshots,
   the fixed-step loop.
 * Logging, fault guard, subsystem reporting, crash reports.
@@ -160,7 +170,7 @@ Working today:
   published catalogue.
 * The master server: a session directory, a project catalogue and a relay, with its own
   self-test.
-* 39 unit tests, the engine self-test, the headless verification and the master self-test,
+* 40 unit tests, the engine self-test, the headless verification and the master self-test,
   all green. `tools/build.ps1` runs the lot.
 
 Not there yet, stated plainly:
@@ -178,6 +188,14 @@ Not there yet, stated plainly:
 * Screenshots and pixel readback work **once per device**, because a second readback wedges
   the driver this was developed against. The engine disables readback rather than freezing.
   See `docs/TROUBLESHOOTING.md`.
+* The same driver occasionally wedges inside `LockRect` while uploading a large texture
+  mip chain. It is the same defect as the readback one - a kernel wait that cannot be timed
+  out - and it is environmental, not a bug in the upload code: the identical code path
+  succeeds for other projects. See `docs/TROUBLESHOOTING.md`.
+* The importer carries over geometry, materials, cameras, splines and the timeline. It does
+  not carry over Addict2's deflectors and gravity wells (imported as empty parent nodes that
+  still pass their transform to children), nor per-vertex colours, nor the map-transform
+  modifier (recorded, not applied).
 * `display3d` stores a camera index but only one camera per scene is used.
 * `Material.Shading` is stored but the renderer picks its pixel shader from whether a texture
   or environment map is present, so shading modes do not currently change the result.
