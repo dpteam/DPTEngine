@@ -127,6 +127,19 @@ try {
                 if (-not (Test-Path $source)) { throw "missing $source" }
 
                 Copy-Item $source $dist
+
+                # Everything beside the executable too.
+                #
+                # The runtime references DPT.Engine.Shared as an assembly, so copying
+                # only the .exe produced a distribution that threw
+                # FileNotFoundException on start-up - the classic "the DLL went
+                # missing from the package" failure. Copying the whole output folder
+                # is the deployment the build actually produces.
+                $folder = Split-Path -Parent $source
+
+                Get-ChildItem $folder -File |
+                    Where-Object { $_.Extension -in @('.dll', '.config') } |
+                    ForEach-Object { Copy-Item $_.FullName $dist -Force }
             }
 
             Copy-Item (Join-Path $root 'README.md') $dist
