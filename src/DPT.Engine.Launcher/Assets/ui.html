@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>__BRAND_TITLE__</title>
+<!--
+  The launcher's interface.
+
+  Written as one page with two splice points (style and script) so the C# host can
+  merge the three embedded files into a single document at start-up. Keeping CSS
+  and script separate during development keeps them readable; merging at runtime
+  keeps the shipped launcher to one exe.
+
+  ES5 only: this page is rendered by MSHTML, which ships with Windows XP and has no
+  ES6 support at all. No let/const, no arrow functions, no template literals, no
+  Promise, no fetch.
+-->
+<style>
+/*__STYLE__*/
+</style>
+</head>
+<body class="light">
+
+<div id="shell">
+
+  <!-- ---------------------------------------------------------------- header -->
+  <div id="topbar">
+    <div class="brand">
+      <div class="logo">DPT</div>
+      <div class="brandtext">
+        <div class="brandname">__BRAND_NAME__</div>
+        <div class="brandsub">LAUNCHER</div>
+      </div>
+    </div>
+
+    <div class="topspacer"></div>
+
+    <div class="masterbox">
+      <label for="master">MASTER</label>
+      <input id="master" type="text" spellcheck="false" placeholder="host:port">
+      <button id="btnConnect" class="btn small">Connect</button>
+    </div>
+
+    <select id="theme" class="theme">
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+      <option value="oled">OLED</option>
+    </select>
+  </div>
+
+  <!-- ---------------------------------------------------------------- body -->
+  <div id="body">
+
+    <!-- left: what can be run -->
+    <div id="left">
+      <div class="panelhead">
+        <span>PROJECTS</span>
+        <button id="btnFolder" class="btn tiny" title="Open the install folder">Folder</button>
+      </div>
+
+      <div id="projects" class="list">
+        <div class="empty">Scanning...</div>
+      </div>
+
+      <div class="panelhead">
+        <span>ONLINE</span>
+        <button id="btnRefresh" class="btn tiny" title="Ask the master for its catalogue">Refresh</button>
+      </div>
+
+      <div id="online" class="list">
+        <div class="empty">No master configured.</div>
+      </div>
+    </div>
+
+    <!-- right: details and actions -->
+    <div id="right">
+      <div class="panelhead"><span>DETAILS</span></div>
+
+      <div id="details">
+        <div class="empty">Select something to see its details.</div>
+      </div>
+
+      <div class="actions">
+        <button id="btnPlay" class="btn primary big">Play</button>
+        <button id="btnEdit" class="btn big">Edit</button>
+      </div>
+
+      <div class="panelhead"><span>ABOUT</span></div>
+
+      <div id="about">
+        <p class="tagline">__BRAND_TAGLINE__</p>
+        <dl>
+          <dt>Version</dt><dd>__BRAND_VERSION__</dd>
+          <dt>Runtime</dt><dd id="aboutRuntime">checking...</dd>
+          <dt>Data</dt><dd id="aboutData"></dd>
+        </dl>
+        <p class="home"><a href="__BRAND_HOME__">__BRAND_HOME__</a></p>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ---------------------------------------------------------------- status -->
+  <div id="statusbar">
+    <span id="status">Starting...</span>
+    <span id="statusRight" class="dim"></span>
+  </div>
+
+</div>
+
+<script>
+/*__SCRIPT__*/
+</script>
+</body>
+</html>

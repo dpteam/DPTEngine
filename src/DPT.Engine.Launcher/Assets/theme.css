@@ -1,0 +1,316 @@
+/*
+ * DPT.Engine launcher - theme.
+ *
+ * The palette comes from Branding.cs through the __BRAND_* tokens, so a fork that
+ * renames the project or changes its colour does not have to touch this file.
+ *
+ * Three themes, selected by a class on <body>: light (default), dark, oled. Only
+ * the light theme is a finished design; dark and oled exist because a launcher is
+ * often used in a dark room and the engine's own editor offers the same three.
+ *
+ * No flexbox and no grid: MSHTML on Windows XP predates both. Layout is absolute
+ * positioning with fixed regions, which is the only thing that behaves identically
+ * on IE8 and on a modern browser.
+ */
+
+/* ---------------------------------------------------------------- tokens */
+
+body.light {
+  --brand-primary: __BRAND_PRIMARY__;
+  --brand-primary2: __BRAND_PRIMARY2__;
+  --brand-bg: __BRAND_BG__;
+  --brand-surface: __BRAND_SURFACE__;
+  --brand-text: __BRAND_TEXT__;
+  --brand-onprimary: __BRAND_ONPRIMARY__;
+  --brand-border: #D8E2EF;
+  --brand-muted: #64748B;
+  --brand-hover: #E8F1FB;
+  --brand-select: #D6E9FF;
+}
+
+body.dark {
+  --brand-primary: __BRAND_DARK_PRIMARY__;
+  --brand-primary2: __BRAND_DARK_PRIMARY2__;
+  --brand-bg: __BRAND_DARK_BG__;
+  --brand-surface: __BRAND_DARK_SURFACE__;
+  --brand-text: __BRAND_DARK_TEXT__;
+  --brand-onprimary: #FFFFFF;
+  --brand-border: #1A1A2E;
+  --brand-muted: #8A93A8;
+  --brand-hover: #0E0E1C;
+  --brand-select: #101038;
+}
+
+body.oled {
+  --brand-primary: __BRAND_OLED_PRIMARY__;
+  --brand-primary2: __BRAND_OLED_PRIMARY__;
+  --brand-bg: __BRAND_OLED_BG__;
+  --brand-surface: __BRAND_OLED_BG__;
+  --brand-text: __BRAND_OLED_TEXT__;
+  --brand-onprimary: #FFFFFF;
+  --brand-border: #111111;
+  --brand-muted: #808080;
+  --brand-hover: #0A0A0A;
+  --brand-select: #0C1A2A;
+}
+
+/* ---------------------------------------------------------------- base */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--brand-bg);
+  color: var(--brand-text);
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+a { color: var(--brand-primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---------------------------------------------------------------- shell */
+
+#shell {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+}
+
+#topbar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 56px;
+  background: var(--brand-surface);
+  border-bottom: 1px solid var(--brand-border);
+}
+
+#body {
+  position: absolute;
+  top: 56px; left: 0; right: 0; bottom: 26px;
+}
+
+#statusbar {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 26px;
+  background: var(--brand-surface);
+  border-top: 1px solid var(--brand-border);
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--brand-muted);
+}
+
+#statusRight { float: right; }
+
+/* ---------------------------------------------------------------- brand */
+
+.brand {
+  position: absolute;
+  left: 14px;
+  top: 10px;
+  height: 36px;
+}
+
+.logo {
+  float: left;
+  width: 36px;
+  height: 36px;
+  line-height: 36px;
+  text-align: center;
+  background: var(--brand-primary);
+  color: var(--brand-onprimary);
+  font-weight: bold;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
+
+.brandtext { float: left; margin-left: 10px; }
+.brandname { font-size: 16px; font-weight: 600; line-height: 18px; }
+.brandsub { font-size: 10px; letter-spacing: 2px; color: var(--brand-muted); }
+
+/* ---------------------------------------------------------------- topbar controls */
+
+.topspacer { position: absolute; left: 260px; right: 320px; top: 0; height: 56px; }
+
+.masterbox {
+  position: absolute;
+  right: 110px;
+  top: 15px;
+  height: 26px;
+}
+
+.masterbox label {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--brand-muted);
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+#master {
+  width: 180px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--brand-border);
+  background: var(--brand-bg);
+  color: var(--brand-text);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  vertical-align: middle;
+}
+
+.theme {
+  position: absolute;
+  right: 14px;
+  top: 15px;
+  height: 26px;
+  border: 1px solid var(--brand-border);
+  background: var(--brand-bg);
+  color: var(--brand-text);
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+.btn {
+  border: 1px solid var(--brand-border);
+  background: var(--brand-bg);
+  color: var(--brand-text);
+  padding: 6px 14px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.btn:hover { background: var(--brand-hover); }
+
+.btn.primary {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: var(--brand-onprimary);
+  font-weight: 600;
+}
+
+.btn.primary:hover { background: var(--brand-primary2); border-color: var(--brand-primary2); }
+
+.btn.small { padding: 3px 10px; font-size: 12px; }
+.btn.tiny { padding: 1px 8px; font-size: 11px; }
+.btn.big { padding: 10px 18px; font-size: 14px; width: 100%; margin-bottom: 8px; }
+
+.btn[disabled] { opacity: 0.45; cursor: default; }
+.btn[disabled]:hover { background: var(--brand-bg); }
+
+/* ---------------------------------------------------------------- panels */
+
+#left {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 340px;
+  border-right: 1px solid var(--brand-border);
+}
+
+#right {
+  position: absolute;
+  left: 340px; right: 0; top: 0; bottom: 0;
+  padding: 0 14px 14px 14px;
+  overflow-y: auto;
+}
+
+.panelhead {
+  height: 26px;
+  line-height: 26px;
+  padding: 0 12px;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--brand-muted);
+  border-bottom: 1px solid var(--brand-border);
+  background: var(--brand-surface);
+}
+
+.panelhead .btn { float: right; margin-top: 3px; }
+
+/* ---------------------------------------------------------------- lists */
+
+.list {
+  overflow-y: auto;
+  border-bottom: 1px solid var(--brand-border);
+}
+
+#projects { height: 46%; }
+#online { height: 40%; }
+
+.item {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--brand-border);
+  cursor: pointer;
+}
+
+.item:hover { background: var(--brand-hover); }
+.item.selected { background: var(--brand-select); }
+
+.item .name { font-weight: 600; }
+.item .meta { font-size: 11px; color: var(--brand-muted); }
+.item .kind {
+  float: right;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--brand-primary);
+  text-transform: uppercase;
+}
+
+.empty {
+  padding: 18px 12px;
+  color: var(--brand-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------- details */
+
+#details {
+  padding: 14px 0;
+  min-height: 120px;
+}
+
+#details dl { margin: 0; }
+#details dt {
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  color: var(--brand-muted);
+  margin-top: 10px;
+}
+#details dd { margin: 1px 0 0 0; word-wrap: break-word; }
+
+.actions { padding: 6px 0 18px 0; }
+
+#about { font-size: 12px; }
+#about .tagline { color: var(--brand-muted); margin: 0 0 12px 0; }
+#about dl { margin: 0; }
+#about dt { font-size: 10px; letter-spacing: 1.2px; color: var(--brand-muted); margin-top: 8px; }
+#about dd { margin: 0; }
+#about .home { margin-top: 14px; font-size: 11px; }
+
+.dim { color: var(--brand-muted); }
+
+/* ---------------------------------------------------------------- error banner */
+
+#banner {
+  position: absolute;
+  left: 340px; right: 0;
+  top: 0;
+  background: #B42318;
+  color: #FFFFFF;
+  padding: 8px 14px;
+  font-size: 12px;
+  display: none;
+  z-index: 10;
+}
+
+#banner a { color: #FFFFFF; text-decoration: underline; float: right; cursor: pointer; }
