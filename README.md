@@ -95,7 +95,7 @@ device stays windowed and the swap chain is resized to the client area.
 
 ```
 DPTEngine/
-  DPTEngine.slnx                 solution file (see Status: lists projects not yet present)
+  DPTEngine.slnx                 solution file
   LICENSE                        GPLv2
   README.md  README.ru.md        this file, and its Russian translation
   CHANGELOG.md
@@ -111,9 +111,13 @@ DPTEngine/
     DPT.Engine/                  the runtime: math, Win32, D3D9, scenes, rendering,
                                  project format, timeline playback
     DPT.Engine.SelfTest/         draws a frame and asserts on pixels
-    DPT.Engine.Master/           master directory server, its own executable
+    DPT.Engine.Master/           master directory server and relay
+    DPT.Engine.Editor/           editor host: an MSHTML view of the web editor
+    DPT.Engine.Launcher/         launcher host: projects and the master catalogue
   tests/
     DPT.Engine.Tests/            unit and interop tests, net40, x86
+  resources/                     the application icon
+  tools/                         build, verification and icon generation
   refs/                          legacy Addict2 sources, read-only reference (gitignored)
 ```
 
@@ -150,24 +154,41 @@ Working today:
 * Timeline playback into an off-screen buffer with letterboxing, the overlay, screenshots,
   the fixed-step loop.
 * Logging, fault guard, subsystem reporting, crash reports.
-* 38 tests, all green, and the headless verification pass, also green.
+* The editor: an MSHTML host around a web page with a scene tree, a timeline with draggable
+  effect bars, an inspector, a schematic preview and three themes.
+* The launcher: an MSHTML host listing local projects and, when a master is configured, the
+  published catalogue.
+* The master server: a session directory, a project catalogue and a relay, with its own
+  self-test.
+* 39 unit tests, the engine self-test, the headless verification and the master self-test,
+  all green. `tools/build.ps1` runs the lot.
 
 Not there yet, stated plainly:
 
 * **No audio.** There is no sound device, no music player and no audio timeline events. The
   original's FMOD/BASS path was not ported.
-* **No networking in the runtime.** The wire protocol, the session and project records and a
-  blocking client live in `DPT.Engine.Shared`, and the master server is its own project, but
-  the runtime never opens a socket: there is no session browser, no hosting and no joining.
-* **No editor yet.** The editor is planned as a web page (HTML/CSS/JS with a timeline, an
-  object list and a shader panel) served by a small host executable. Neither the page nor the
-  host exists in this tree, and neither does the launcher. Until then, projects are written by
-  hand in the format described in `docs/PROJECT_FORMAT.md`.
-* `DPTEngine.slnx` lists `DPT.Engine.Editor` and `DPT.Engine.Launcher`, which are not present,
-  so building the solution file fails. Build the project files directly, as in
-  `docs/BUILDING.md`.
+* **No networking in the runtime.** The protocol, the records, the client and the master all
+  exist and the master is tested, but the runtime never opens a socket: there is no in-game
+  session browser, no hosting and no joining. The launcher can list a master's catalogue;
+  the engine cannot join a session.
+* **The editor's preview is a layout schematic**, not a render. It draws effect rectangles,
+  their colours and a wireframe box so the user can see framing and timing; the real picture
+  comes from pressing Play, which launches the runtime on the project as it stands.
+* **No undo, no keyframe editor, no texture import** in the editor.
 * Screenshots and pixel readback work **once per device**, because a second readback wedges
-  the driver this was developed against. See `docs/TROUBLESHOOTING.md`.
-* Colours do not survive a save/load round trip: the writer emits `#RRGGBBAA` and the reader
-  expects `#AARRGGBB`. See the note in `docs/PROJECT_FORMAT.md`.
+  the driver this was developed against. The engine disables readback rather than freezing.
+  See `docs/TROUBLESHOOTING.md`.
 * `display3d` stores a camera index but only one camera per scene is used.
+* `Material.Shading` is stored but the renderer picks its pixel shader from whether a texture
+  or environment map is present, so shading modes do not currently change the result.
+
+## Building and verifying
+
+```
+dotnet build DPTEngine.slnx
+.\tools\build.ps1
+```
+
+The first builds everything. The second is the real check: it builds, runs the unit tests,
+the engine self-test, the headless verification and the master self-test, and reports one
+verdict. `-Pack` additionally stages a runnable distribution under `dist\net40`.
