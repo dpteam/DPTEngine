@@ -27,6 +27,7 @@
       use. Silencing them keeps the build output readable for the ones that
       matter.
     -->
+    <ApplicationIcon>..\..\resources\dptengine.ico</ApplicationIcon>
     <NoWarn>$(NoWarn);CS0162;CS0168;CS0219;CS0414;CS0649;CS1591</NoWarn>
   </PropertyGroup>
 

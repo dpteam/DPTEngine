@@ -4,4 +4,6 @@
   <Project Path="src/DPT.Engine.Master/DPT.Engine.Master.csproj" />
   <Project Path="src/DPT.Engine.Editor/DPT.Engine.Editor.csproj" />
   <Project Path="src/DPT.Engine.Launcher/DPT.Engine.Launcher.csproj" />
+  <Project Path="src/DPT.Engine.SelfTest/DPT.Engine.SelfTest.csproj" />
+  <Project Path="tests/DPT.Engine.Tests/DPT.Engine.Tests.csproj" />
 </Solution>
