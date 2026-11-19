@@ -6,6 +6,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 
@@ -82,6 +84,25 @@ namespace DPT.Engine.Shared.Diagnostics
         private static bool crashHandlerInstalled;
         private static volatile bool shuttingDown;
         private static string crashDirectory;
+
+        /// <summary>
+        /// Guards the first-chance handler against re-entering itself.
+        ///
+        /// A first-chance handler runs for *every* exception, including the ones
+        /// thrown by the handler's own logging. Without this flag a broken log sink
+        /// turns into unbounded recursion, and the stack overflows before anything
+        /// is written.
+        /// </summary>
+        [ThreadStatic] private static bool inFirstChance;
+
+        /// <summary>
+        /// How many first-chance exceptions to report at warning level before the
+        /// rest go to the verbose log. A busy program throws a lot of expected
+        /// exceptions - a cancelled operation, a file probe - and a log that is
+        /// nothing but those is useless when something real happens.
+        /// </summary>
+        private static int firstChanceReports;
+        private const int FirstChanceReportLimit = 40;
 
         /// <summary>
         /// How many consecutive failures a subsystem tolerates before it disables
@@ -385,6 +406,83 @@ namespace DPT.Engine.Shared.Diagnostics
 
             AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
             AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
+            AppDomain.CurrentDomain.FirstChanceException += OnFirstChanceException;
+
+            NativeFaultTracer.Install(crashDirectory);
+        }
+
+        /// <summary>
+        /// Logs an exception the moment it is thrown, before anything has had a
+        /// chance to handle it.
+        ///
+        /// This exists because the exceptions that matter most are the ones that never
+        /// reach a handler. An access violation, a corrupted-state exception or a fault
+        /// raised inside a native callback can terminate the process without ever
+        /// touching <see cref="OnUnhandledException"/> - Windows shows its own error
+        /// dialog and the log ends mid-sentence, which tells you nothing. First chance
+        /// is the last point at which the stack is still intact and still managed.
+        ///
+        /// The trade-off is volume: this fires for every exception, including ones
+        /// that are thrown and caught on purpose. So the first few are reported at
+        /// warning level with a full stack, and after that only the serious types keep
+        /// appearing - a log full of expected exceptions is as useless as an empty one.
+        /// </summary>
+        private static void OnFirstChanceException(object sender, FirstChanceExceptionEventArgs e)
+        {
+            if (inFirstChance) return;
+
+            var error = e.Exception;
+            if (error == null) return;
+
+            inFirstChance = true;
+
+            try
+            {
+                var serious = IsSerious(error);
+
+                if (!serious && firstChanceReports >= FirstChanceReportLimit) return;
+
+                firstChanceReports++;
+
+                var text = "First chance: " + error.GetType().Name + ": " + error.Message +
+                           (error.StackTrace == null ? "" : Environment.NewLine + error.StackTrace);
+
+                if (serious)
+                {
+                    // Always visible: these are the ones that kill a process.
+                    EngineLog.Error("crash", text);
+                }
+                else if (firstChanceReports <= 5)
+                {
+                    EngineLog.Warn("crash", text);
+                }
+                else
+                {
+                    EngineLog.Verbose("crash", text);
+                }
+            }
+            catch
+            {
+                // A diagnostic must never be the reason a program dies.
+            }
+            finally
+            {
+                inFirstChance = false;
+            }
+        }
+
+        /// <summary>
+        /// True for exception types that mean the process is in trouble, as opposed to
+        /// the ordinary exceptions a program throws and catches as control flow.
+        /// </summary>
+        private static bool IsSerious(Exception error)
+        {
+            return error is AccessViolationException
+                   || error is SEHException
+                   || error is StackOverflowException
+                   || error is OutOfMemoryException
+                   || error is TypeInitializationException
+                   || error is BadImageFormatException;
         }
 
         /// <summary>Marks the process as exiting, so a normal shutdown files no report.</summary>

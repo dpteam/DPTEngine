@@ -102,6 +102,65 @@ If you are porting this engine and hit it often, the structural fix is to build 
 `LockRect` calls with one driver call. That is not implemented here because the failure cannot be
 reproduced reliably enough to prove the fix.
 
+## The process dies with no log line and no exception
+
+**Symptom.** The demo runs for a while - anything from a minute to several - and then
+disappears. The log ends mid-sentence with no `[E]` line, no crash report, and often with the
+Windows dialog *"Exception Processing Message 0xc0000005 - Unexpected parameters"*. Exit code is
+`0xC0000005` or `0x80131506`.
+
+**Why nothing is logged.** `0x80131506` is `COR_E_EXECUTIONENGINE`: the CLR itself caught an
+access violation and terminated the process. That path does not run
+`AppDomain.UnhandledException`, so the crash reporter never fires. `0xC0000005` is the raw fault,
+and if it happens inside a window procedure Windows shows its own dialog instead. In both cases
+the managed stack is already gone by the time anything could record it.
+
+**What the engine now does about it.** Three layers, each for a different failure mode:
+
+* **Native fault tracer** - a vectored exception handler that runs before everything else,
+  including the CLR. It records the faulting instruction pointer resolved to `module+offset`, plus
+  whether the access was a read or a write and to which address. Output goes to
+  `Crashes\native-fault.txt` and to the log. A line like
+  `ACCESS_VIOLATION at d3d9.dll+0x1A4C2 writing 0x0000000C` is the whole diagnosis.
+* **First-chance exceptions** - logged the moment they are thrown, before anything handles them.
+  The serious types (access violation, stack overflow, out of memory, type initialiser) are
+  always logged; ordinary ones are capped so the log stays readable.
+* **A one-second heartbeat** at verbose level with the frame number, live particle count, GC
+  counts and heap size. If the process dies silently, the last heartbeat says how far it got.
+
+### Capturing a fault
+
+Run with the dialogs enabled so nothing is suppressed, and with verbose logging:
+
+```bat
+set DPT_ALLOW_CRASH_DIALOGS=1
+dptengine.exe --log-level=verbose
+```
+
+When it dies, `Crashes\native-fault.txt` will contain the module and offset. Send that.
+
+`DPT_ALLOW_CRASH_DIALOGS=1` matters because the engine calls `SetErrorMode` to suppress Windows
+error dialogs, which also suppresses Windows Error Reporting and therefore any crash dump.
+
+### Bisecting where it dies
+
+Each variable removes one layer. If the fault disappears with a layer removed, it is in that
+layer; if it survives all of them, it is in the window/device/present path.
+
+| Variable | Effect |
+| --- | --- |
+| `DPT_MINIMAL=1` | Clear and present only - no project, no blit, no overlay |
+| `DPT_MINIMAL=2` | Adds the off-screen project buffer |
+| `DPT_MINIMAL=3` | Adds the letterboxed blit to the window |
+| `DPT_SKIP_EFFECTS=particles,display3d` | Leaves the named effect types out of the timeline |
+| `DPT_DEVICE=ref` | Forces the software rasteriser: if the fault goes away, it is the GPU driver |
+| `DPT_DEVICE=hal` | Forces the hardware device, skipping the fallbacks |
+| `DPT_CRASH_TEST=1` | Faults deliberately, to prove the tracer is working |
+
+`DPT_DEVICE=ref` is the important one for deciding whether to keep debugging. A fault that only
+happens on one driver is not something the engine can fix; a fault that happens on the reference
+rasteriser too is in this code.
+
 ## A render target bound as a texture crashes
 
 **Symptom.** The first frame that composites a post-process crashes inside the driver, or the

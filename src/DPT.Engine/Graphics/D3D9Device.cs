@@ -195,9 +195,30 @@ namespace DPT.Engine.Graphics
 
             var lastResult = 0;
 
+            // DPT_DEVICE=ref forces the software rasteriser.
+            //
+            // It renders correctly and very slowly, which makes it the one honest way
+            // to answer "is this the driver?" without touching the code: if a crash
+            // disappears under the reference device, the fault is in the GPU driver and
+            // no amount of engine debugging will find it. Same idea as DPT_FRESH_READBACK.
+            var forced = Environment.GetEnvironmentVariable("DPT_DEVICE");
+
             for (var i = 0; i < attempts.Length; i++)
             {
                 var attempt = attempts[i];
+
+                if (string.Equals(forced, "ref", StringComparison.OrdinalIgnoreCase) &&
+                    attempt.Type != D3D9.DeviceType.Reference)
+                {
+                    continue;
+                }
+
+                if (string.Equals(forced, "hal", StringComparison.OrdinalIgnoreCase) &&
+                    attempt.Type == D3D9.DeviceType.Reference)
+                {
+                    continue;
+                }
+
                 var parameters = BuildPresentParameters(attempt.Behavior);
 
                 IntPtr created;

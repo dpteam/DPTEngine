@@ -52,6 +52,25 @@ namespace DPT.Engine.Runtime
         private bool showOverlay = true;
         private bool disposed;
 
+        /// <summary>
+        /// When false the overlay is never drawn and F1 does nothing.
+        ///
+        /// Set by <c>--no-overlay</c>. A player who just wants the demo does not want
+        /// text in the corner, and a projector or a capture session certainly does not.
+        /// </summary>
+        private bool overlayAllowed = true;
+
+        /// <summary>
+        /// When true the loop draws nothing but a clear and a present.
+        ///
+        /// Set by <c>DPT_MINIMAL=1</c>. It exists to bisect a fault that only appears
+        /// after the program has been running for a while: with every effect and the
+        /// whole project pipeline removed, whatever still crashes is in the window,
+        /// the device or the present path - and that is a completely different bug from
+        /// one in the renderer.
+        /// </summary>
+        private int minimalMode;
+
         private long frequency;
         private long previousTicks;
         private double accumulator;
@@ -65,6 +84,20 @@ namespace DPT.Engine.Runtime
         internal EngineApp(string projectPath)
         {
             this.projectPath = projectPath;
+        }
+
+        /// <summary>Suppresses the overlay entirely, as if the user had pressed F1.</summary>
+        internal bool OverlayAllowed
+        {
+            get { return overlayAllowed; }
+            set { overlayAllowed = value; }
+        }
+
+        /// <summary>Draws nothing but a clear and a present, for bisecting a fault.</summary>
+        internal int MinimalMode
+        {
+            get { return minimalMode; }
+            set { minimalMode = value; }
         }
 
         // ---------------------------------------------------------------- startup
@@ -266,9 +299,37 @@ namespace DPT.Engine.Runtime
             {
                 device.BeginScene();
 
-                player.RenderFrame();
+                if (minimalMode > 0)
+                {
+                    // Levels, so a fault can be pinned to one layer:
+                    //   1 - clear and present only
+                    //   2 - the off-screen project buffer, no blit
+                    //   3 - the off-screen buffer and the letterboxed blit, no effects
+                    if (minimalMode < 2)
+                    {
+                        device.Clear(0xFF101820, true, true, false);
+                    }
+                    else
+                    {
+                        device.SetRenderTarget(player.FrameTarget);
+                        device.Clear(0xFF101820, true, true, false);
 
-                if (showOverlay) DrawOverlay();
+                        if (minimalMode >= 3)
+                        {
+                            device.SetRenderTarget(null);
+                            device.SetViewport(0, 0, device.Width, device.Height);
+                            player.PresentToWindow();
+                        }
+
+                        device.SetRenderTarget(null);
+                    }
+                }
+                else
+                {
+                    player.RenderFrame();
+
+                    if (showOverlay && overlayAllowed) DrawOverlay();
+                }
 
                 device.EndScene();
                 device.Present();
@@ -467,6 +528,15 @@ namespace DPT.Engine.Runtime
                 framesPerSecond = (float)(framesThisSecond / (nowSeconds - secondStart));
                 framesThisSecond = 0;
                 secondStart = nowSeconds;
+
+                // A heartbeat, so a crash that kills the process without an exception
+                // still says where it happened. Without this the log stops at "Started"
+                // and there is nothing to go on: the render loop is silent by design, so
+                // silence cannot be distinguished from a hang or a fault.
+                EngineLog.Verbose("runtime", "frame " + player.Frame + ", " + player.LiveParticleCount +
+                                             " particle(s), gc " + GC.CollectionCount(0) + "/" +
+                                             GC.CollectionCount(2) + ", heap " +
+                                             (GC.GetTotalMemory(false) / 1024) + " KB.");
             }
         }
 

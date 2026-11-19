@@ -45,13 +45,21 @@ namespace DPT.Engine
 
         private static int Main(string[] args)
         {
-            SetErrorMode(SemFailCriticalErrors | SemNoGpfaultErrorBox |
-                         SemNoAlignmentFaultExcept | SemNoOpenFileErrorBox);
+            // The error-mode flags suppress the Windows dialogs a crash would otherwise
+            // raise, which is what a player wants. They also suppress Windows Error
+            // Reporting, and therefore the crash dump - so DPT_ALLOW_CRASH_DIALOGS=1
+            // turns them off when someone needs a dump to debug with.
+            if (Environment.GetEnvironmentVariable("DPT_ALLOW_CRASH_DIALOGS") != "1")
+            {
+                SetErrorMode(SemFailCriticalErrors | SemNoGpfaultErrorBox |
+                             SemNoAlignmentFaultExcept | SemNoOpenFileErrorBox);
+            }
             string projectPath = null;
             string importPath = null;
             string exportPath = null;
             var logLevel = LogLevel.Info;
             var headless = false;
+            var overlay = true;
 
             for (var i = 0; i < args.Length; i++)
             {
@@ -81,6 +89,12 @@ namespace DPT.Engine
                     continue;
                 }
 
+                if (string.Equals(argument, "--no-overlay", StringComparison.OrdinalIgnoreCase))
+                {
+                    overlay = false;
+                    continue;
+                }
+
                 if (argument.StartsWith("--project=", StringComparison.OrdinalIgnoreCase))
                 {
                     projectPath = argument.Substring("--project=".Length);
@@ -107,6 +121,11 @@ namespace DPT.Engine
 
             EngineLog.Initialize(null, logLevel, 4 * 1024 * 1024, 3);
 
+            // Installed before anything can fail, not when the game loop starts: a
+            // crash while loading a project is exactly as interesting as one while
+            // rendering, and until this line runs a native fault leaves no trace at all.
+            FaultGuard.InstallCrashHandler(null);
+
             EngineLog.Info("startup", Branding.Title + " starting.");
             EngineLog.Info("startup", "Data directory: " + PortablePaths.DataDirectory);
             EngineLog.Info("startup", "Log file: " + EngineLog.FilePath);
@@ -116,6 +135,17 @@ namespace DPT.Engine
                 return ImportProject(importPath, exportPath);
             }
 
+            // A deliberate fault, to prove the native fault tracer works.
+            //
+            // Instrumentation that has never been seen to fire is not instrumentation,
+            // it is a comforting assumption. This reads address zero, which raises
+            // exactly the exception a real crash does, and the tracer must name it.
+            if (Environment.GetEnvironmentVariable("DPT_CRASH_TEST") == "1")
+            {
+                Console.WriteLine("Crashing on purpose to test the fault tracer.");
+                System.Runtime.InteropServices.Marshal.ReadInt32(IntPtr.Zero);
+            }
+
             if (headless)
             {
                 return Headless.Run(projectPath);
@@ -123,6 +153,12 @@ namespace DPT.Engine
 
             using (var app = new EngineApp(projectPath))
             {
+                app.OverlayAllowed = overlay;
+
+                int minimal;
+                int.TryParse(Environment.GetEnvironmentVariable("DPT_MINIMAL"), out minimal);
+                app.MinimalMode = minimal;
+
                 return app.Run();
             }
         }

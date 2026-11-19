@@ -53,6 +53,34 @@ namespace DPT.Engine.Engine
         /// <summary>When true the timeline loops at the end.</summary>
         internal bool Loop = true;
 
+        /// <summary>
+        /// Total live particles across every emitter in the project.
+        ///
+        /// Exposed for diagnostics: the particle count is the one number that explains a
+        /// sudden change in frame time or memory use, and it is invisible otherwise.
+        /// </summary>
+        internal int LiveParticleCount
+        {
+            get
+            {
+                if (project == null) return 0;
+
+                var total = 0;
+
+                for (var s = 0; s < project.Scenes.Count; s++)
+                {
+                    var nodes = project.Scenes[s].Nodes;
+
+                    for (var n = 0; n < nodes.Count; n++)
+                    {
+                        if (nodes[n].Emitter != null) total += nodes[n].Emitter.LiveCount;
+                    }
+                }
+
+                return total;
+            }
+        }
+
         internal TimelinePlayer(D3D9Device device, SceneRenderer renderer, QuadRenderer quads)
         {
             if (device == null) throw new ArgumentNullException("device");
@@ -212,6 +240,17 @@ namespace DPT.Engine.Engine
 
                 if (!effect.IsActive(Frame)) continue;
 
+                // Diagnostic: DPT_SKIP_EFFECTS is a comma-separated list of effect types
+                // to leave out. It exists to bisect a rendering fault down to the effect
+                // that causes it, which is otherwise guesswork in a 7-effect timeline.
+                var skip = Environment.GetEnvironmentVariable("DPT_SKIP_EFFECTS");
+
+                if (!string.IsNullOrEmpty(skip) &&
+                    ("," + skip + ",").IndexOf("," + effect.TypeName + ",", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    continue;
+                }
+
                 effect.ComputeRect(context);
 
                 FaultGuard.Guard("player", "effect:" + effect.TypeName, delegate { effect.Render(context); });
@@ -232,6 +271,17 @@ namespace DPT.Engine.Engine
         /// Draws the project buffer to the window, preserving the project's aspect
         /// ratio and filling the bars with black.
         /// </summary>
+        /// <summary>
+        /// Blits the project buffer to the window with letterboxing.
+        ///
+        /// Public so a diagnostic mode can exercise this path without running the
+        /// timeline, which is how the blit is separated from the effects.
+        /// </summary>
+        internal void PresentToWindow()
+        {
+            PresentFrameToWindow();
+        }
+
         private void PresentFrameToWindow()
         {
             if (!quads.IsReady) quads.Initialize();
