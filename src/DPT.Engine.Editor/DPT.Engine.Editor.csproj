@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      net40 + WinForms for the same reason as the launcher: the editor is a tool,
+      not the engine, and the WebBrowser control is the only HTML renderer that
+      ships with Windows XP and needs no download. The runtime itself never
+      references WinForms.
+    -->
+    <TargetFrameworks>net40;net9.0-windows</TargetFrameworks>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>dptengine-editor</AssemblyName>
+    <RootNamespace>DPT.Engine.Editor</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AssemblyTitle>DPT.Engine Editor</AssemblyTitle>
+    <Product>DPT.Engine</Product>
+    <Company>DartPower Team</Company>
+    <Copyright>Copyright (C) DartPower Team. GPLv2.</Copyright>
+    <Version>1.0.0</Version>
+    <NeutralLanguage>en</NeutralLanguage>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net40'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!--
+    The protocol and the branding are compiled in, not referenced, so the editor
+    ships as one exe with nothing beside it.
+  -->
+  <ItemGroup>
+    <Compile Include="..\DPT.Engine.Shared\Branding.cs" Link="Shared\Branding.cs" />
+    <Compile Include="..\DPT.Engine.Shared\PortablePaths.cs" Link="Shared\PortablePaths.cs" />
+    <Compile Include="..\DPT.Engine.Shared\Json.cs" Link="Shared\Json.cs" />
+  </ItemGroup>
+
+  <!--
+    The page is embedded: the editor must work from a folder copied anywhere,
+    and three loose files next to the exe is three files to lose.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\editor.html" LogicalName="DPT.Engine.Editor.Assets.editor.html" />
+    <EmbeddedResource Include="Assets\theme.css" LogicalName="DPT.Engine.Editor.Assets.theme.css" />
+    <EmbeddedResource Include="Assets\app.js" LogicalName="DPT.Engine.Editor.Assets.app.js" />
+  </ItemGroup>
+
+  <!-- System.Core is implicit on modern targets and only needed for net40. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net40'">
+    <Reference Include="System.Core" />
+  </ItemGroup>
+
+</Project>

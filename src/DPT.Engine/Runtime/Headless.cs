@@ -33,13 +33,13 @@ namespace DPT.Engine.Runtime
         private const int Width = 512;
         private const int Height = 384;
 
-        internal static int Run()
+        internal static int Run(string projectPath)
         {
             EngineLog.Info("headless", "Running the headless verification.");
 
             try
             {
-                return Verify();
+                return Verify(projectPath);
             }
             catch (Exception error)
             {
@@ -50,9 +50,11 @@ namespace DPT.Engine.Runtime
             }
         }
 
-        private static int Verify()
+        private static int Verify(string projectPath)
         {
-            var project = TemplateProject.Create();
+            var project = LoadProject(projectPath);
+
+            if (project == null) return 1;
 
             Console.WriteLine("DPT.Engine headless verification");
             Console.WriteLine("  project: " + project.Name + " (" + project.Width + "x" + project.Height +
@@ -73,6 +75,36 @@ namespace DPT.Engine.Runtime
 
             Console.WriteLine("  round trip: ok");
 
+            // A second round trip must be byte-identical to the first. If it is not,
+            // the loader is losing something on every pass, which is the difference
+            // between "renders from code" and "renders from a file".
+            //
+            // The comparison starts from the first serialisation, not from the
+            // in-memory template: a template built in code is not sorted, and loading
+            // it legitimately sorts the timeline. What has to hold is that saving and
+            // loading is idempotent from then on.
+            var first = ProjectSerializer.ToText(roundTrip);
+            var second = ProjectSerializer.ToText(ProjectSerializer.LoadFromText(first));
+
+            if (first != second)
+            {
+                Console.WriteLine("  round trip is NOT stable; first difference:");
+
+                var limit = Math.Min(first.Length, second.Length);
+                var at = 0;
+
+                while (at < limit && first[at] == second[at]) at++;
+
+                var from = Math.Max(0, at - 120);
+                Console.WriteLine("    at " + at);
+                Console.WriteLine("    first : " + first.Substring(from, Math.Min(240, first.Length - from)).Replace("\n", "\\n"));
+                Console.WriteLine("    second: " + second.Substring(from, Math.Min(240, second.Length - from)).Replace("\n", "\\n"));
+
+                throw new InvalidOperationException("The project format is not stable across a round trip.");
+            }
+
+            Console.WriteLine("  round trip is stable");
+
             using (var window = new Win32Window())
             {
                 window.CreateHidden("DPT.Engine headless", Width, Height);
@@ -91,7 +123,13 @@ namespace DPT.Engine.Runtime
                     {
                         renderer.InitializeShaders();
                         quads.Initialize();
-                        player.SetProject(project);
+                        // Render the round-tripped project, not the original.
+                        //
+                        // This is the stronger check: it proves the format carries
+                        // everything the renderer needs, not merely that the object
+                        // graph survived in memory. A project that renders from code
+                        // but not from its own file is exactly the bug this catches.
+                        player.SetProject(roundTrip);
 
                         var directory = Path.Combine(PortablePaths.DataDirectory, "Screenshots");
                         Directory.CreateDirectory(directory);
@@ -150,7 +188,13 @@ namespace DPT.Engine.Runtime
                                     var path = Path.Combine(directory, "headless-" + frames[i] + ".bmp");
                                     BmpWriter.Write(path, pixels, readWidth, readHeight);
 
-                                    var ok = brightness > 0.005f && distinct > 8;
+                                    // The check is that the frame is not blank: it has
+                                    // to contain more than the clear colour. The exact
+                                    // threshold is deliberately low, because a project
+                                    // may legitimately be a single dark object on a dark
+                                    // floor - the template is far busier than a minimal
+                                    // project and the check must pass for both.
+                                    var ok = brightness > 0.001f && distinct >= 3;
 
                                     description += ", brightness " + brightness.ToString("0.0000") +
                                                    ", distinct colours " + distinct +
@@ -189,6 +233,35 @@ namespace DPT.Engine.Runtime
             Console.WriteLine("headless verification passed");
             EngineLog.Info("headless", "Passed.");
             return 0;
+        }
+
+        /// <summary>
+        /// Loads the project to verify: the file named on the command line, or the
+        /// built-in template.
+        ///
+        /// Verifying an arbitrary file is what makes this usable as a check for the
+        /// editor's output: point it at what the editor saved and the runtime proves
+        /// it can play it.
+        /// </summary>
+        private static ProjectFile LoadProject(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return TemplateProject.Create();
+
+            if (!File.Exists(path))
+            {
+                Console.Error.WriteLine("No such project: " + path);
+                return null;
+            }
+
+            try
+            {
+                return ProjectSerializer.Load(path);
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine("Could not load " + path + ": " + error.Message);
+                return null;
+            }
         }
 
         /// <summary>

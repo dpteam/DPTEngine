@@ -161,7 +161,43 @@ namespace DPT.Engine.Project
                 if (effect.EndFrame > Duration) effect.EndFrame = Duration;
             }
 
-            Timeline.Sort(delegate(Effect a, Effect b) { return a.StartFrame.CompareTo(b.StartFrame); });
+            SortTimelineStable();
+        }
+
+        /// <summary>
+        /// Orders the timeline by start frame, preserving authoring order for ties.
+        ///
+        /// The stability is not a nicety. List.Sort is an unstable introsort, and
+        /// almost every project has several effects starting at frame zero - a
+        /// clear, a capture, a particle step, a 3D view. An unstable sort is free to
+        /// put the clear after the 3D view, which erases the frame it was meant to
+        /// precede; the demo then renders black for no visible reason. Ties are
+        /// therefore broken by the original position, which is the order the author
+        /// arranged and the order the editor shows.
+        /// </summary>
+        private void SortTimelineStable()
+        {
+            var order = new int[Timeline.Count];
+
+            for (var i = 0; i < order.Length; i++)
+            {
+                order[i] = i;
+            }
+
+            var effects = Timeline.ToArray();
+
+            Array.Sort(order, delegate(int a, int b)
+            {
+                var byStart = effects[a].StartFrame.CompareTo(effects[b].StartFrame);
+                return byStart != 0 ? byStart : a.CompareTo(b);
+            });
+
+            Timeline.Clear();
+
+            for (var i = 0; i < order.Length; i++)
+            {
+                Timeline.Add(effects[order[i]]);
+            }
         }
 
         private static bool IsPowerOfTwo(int value)
@@ -207,9 +243,21 @@ namespace DPT.Engine.Project
                 value[0].AsFloat(fallback.X), value[1].AsFloat(fallback.Y),
                 value[2].AsFloat(fallback.Z), value[3].AsFloat(fallback.W));
 
-            if (result.LengthSquared < 1e-8f) return Quaternion.Identity;
+            var lengthSquared = result.LengthSquared;
 
-            result.Normalize();
+            if (lengthSquared < 1e-8f || !MathHelper.IsFinite(lengthSquared)) return Quaternion.Identity;
+
+            // Only normalise when it is actually needed.
+            //
+            // Normalising unconditionally perturbs an already-unit quaternion in the
+            // last few bits, so saving, loading and saving again produces a different
+            // file every time. That makes a project un-diffable and turns a version
+            // control history into noise.
+            if (Math.Abs(lengthSquared - 1f) > 1e-5f)
+            {
+                result.Normalize();
+            }
+
             return result;
         }
     }

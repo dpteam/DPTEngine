@@ -945,7 +945,6 @@ namespace DPT.Engine.Rendering
         }
 
         // ---------------------------------------------------------------- types
-
         private struct MeshBuffers : IDisposable
         {
             internal readonly D3D9VertexBuffer Vertices;

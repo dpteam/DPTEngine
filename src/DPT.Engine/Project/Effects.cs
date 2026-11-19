@@ -117,8 +117,8 @@ namespace DPT.Engine.Project
 
             var x1 = StartRect.X + (EndRect.X - StartRect.X) * progress;
             var y1 = StartRect.Y + (EndRect.Y - StartRect.Y) * progress;
-            var x2 = StartRect.Width + (EndRect.Width - StartRect.Width) * progress;
-            var y2 = StartRect.Height + (EndRect.Height - StartRect.Height) * progress;
+            var x2 = StartRect.X2 + (EndRect.X2 - StartRect.X2) * progress;
+            var y2 = StartRect.Y2 + (EndRect.Y2 - StartRect.Y2) * progress;
 
             var scaleX = context.Width / EffectContext.VirtualWidth;
             var scaleY = context.Height / EffectContext.VirtualHeight;
@@ -243,30 +243,50 @@ namespace DPT.Engine.Project
         }
     }
 
-    /// <summary>A rectangle in the timeline's virtual space, in pixels.</summary>
+    /// <summary>
+    /// A rectangle in the timeline's virtual space, in pixels.
+    ///
+    /// The fields are the two corners, not an origin and a size, and they are named
+    /// accordingly: <see cref="X"/>..<see cref="X2"/> and <see cref="Y"/>..<see
+    /// cref="Y2"/>. They were called Width and Height originally, which read like a
+    /// size while behaving like a right and bottom edge - the sort of mismatch that
+    /// produces a rectangle three times too large and no obvious cause.
+    ///
+    /// On the wire it is a four-element array: x1, y1, x2, y2.
+    /// </summary>
     public struct Rect
     {
         public float X;
         public float Y;
-        public float Width;
-        public float Height;
+        public float X2;
+        public float Y2;
 
         public static Rect FullScreen
         {
-            get { return new Rect { X = 0f, Y = 0f, Width = 800f, Height = 600f }; }
+            get { return new Rect { X = 0f, Y = 0f, X2 = 800f, Y2 = 600f }; }
         }
 
-        public Rect(float x, float y, float width, float height)
+        public Rect(float x, float y, float x2, float y2)
         {
             X = x;
             Y = y;
-            Width = width;
-            Height = height;
+            X2 = x2;
+            Y2 = y2;
+        }
+
+        public float Width
+        {
+            get { return X2 - X; }
+        }
+
+        public float Height
+        {
+            get { return Y2 - Y; }
         }
 
         public JsonValue ToJson()
         {
-            return JsonValue.NewArray().Add(X).Add(Y).Add(Width).Add(Height);
+            return JsonValue.NewArray().Add(X).Add(Y).Add(X2).Add(Y2);
         }
 
         public static Rect FromJson(JsonValue value, Rect fallback)
@@ -274,7 +294,7 @@ namespace DPT.Engine.Project
             if (value.Type != JsonValue.Kind.Array || value.Count < 4) return fallback;
 
             return new Rect(value[0].AsFloat(fallback.X), value[1].AsFloat(fallback.Y),
-                value[2].AsFloat(fallback.Width), value[3].AsFloat(fallback.Height));
+                value[2].AsFloat(fallback.X2), value[3].AsFloat(fallback.Y2));
         }
     }
 

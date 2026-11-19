@@ -26,8 +26,12 @@
     var BRAND = window.DPT_BRANDING || {};
     var BRAND_NAME = BRAND.name || 'DPT.Engine';
     var BRAND_VERSION = BRAND.version || '1.0.0';
-    var BRAND_TITLE = BRAND.title || (BRAND_NAME + ' v' + BRAND_VERSION);
     var BRAND_TAGLINE = BRAND.tagline || 'A Win32 + Direct3D 9 demo engine with a web editor';
+
+    // The host may splice a ready-made title ("DPT.Engine v1.0.0"); the
+    // fallback mirrors Branding.Title so a bare Assets folder still titles
+    // the window correctly.
+    var BRAND_TITLE = BRAND.title || (BRAND_NAME + ' v' + BRAND_VERSION);
 
     var THEMES = ['light', 'dark', 'oled'];
 
@@ -270,6 +274,8 @@
     var canvasH = 0;
     var dpr = 1;
     var ctx = null;
+    var placedTags = [];
+    var pendingTags = [];
 
     var supportsColourInput = false;
 
@@ -546,13 +552,31 @@
     function normalizeProject(raw) {
         var p = isObject(raw) ? raw : {};
 
+        // The scalar repairs mirror ProjectFile.Normalize exactly: an
+        // out-of-range value is replaced by the default, not clamped to the
+        // nearest legal value. Matching it means "open then save" in the
+        // editor produces the same document the runtime would have written,
+        // instead of silently nudging a broken project to the edge.
         p.format = intOr(p.format, 1);
         p.name = str(p.name) || 'Untitled';
         p.author = str(p.author);
-        p.width = clamp(intOr(p.width, 1024), 16, 8192);
-        p.height = clamp(intOr(p.height, 768), 16, 8192);
-        p.fps = clamp(intOr(p.fps, 100), 1, 1000);
-        p.duration = Math.max(1, intOr(p.duration, 600));
+
+        p.width = intOr(p.width, 1024);
+        if (p.width <= 0 || p.width > 8192) p.width = 1024;
+
+        p.height = intOr(p.height, 768);
+        if (p.height <= 0 || p.height > 8192) p.height = 768;
+
+        p.fps = intOr(p.fps, 100);
+        if (p.fps <= 0 || p.fps > 1000) p.fps = 100;
+
+        p.duration = intOr(p.duration, 600);
+        if (p.duration <= 0) p.duration = p.fps * 5;
+
+        // A negative duration is repaired to fps*5 by the block above, so
+        // this cannot be zero; guard anyway because every /duration below
+        // would produce Infinity.
+        if (p.duration < 1) p.duration = 1;
 
         p.textures = isArray(p.textures) ? p.textures : [];
         p.scenes = isArray(p.scenes) ? p.scenes : [];
@@ -569,8 +593,14 @@
             if (effect) kept.push(effect);
         }
 
+        // Deliberately NOT sorted here. The file keeps the authoring order,
+        // and effects render in list order, so re-sorting on load would
+        // silently rewrite a project and change the composite wherever two
+        // effects share a start frame. The runtime's own Normalize sorts
+        // after loading, so saving in authoring order costs nothing and
+        // makes "open then save" a no-op diff.
         p.timeline = kept;
-        sortTimeline(p);
+
         return p;
     }
 
@@ -675,8 +705,26 @@
         // file written by a newer editor must survive a round trip through
         // this one. The inspector shows it as read-only timing.
         effect.type = type;
-        effect.start = clamp(intOr(effect.start, 0), 0, duration);
-        effect.end = clamp(intOr(effect.end, effect.start), effect.start, duration);
+
+        // Same repair order as ProjectFile.Normalize: swap an inverted span
+        // first, then clamp into the project. Swapping rather than clamping
+        // matters because a span of 80..20 means 20..80, not a zero-length
+        // effect parked at 80.
+        effect.start = intOr(effect.start, 0);
+        effect.end = intOr(effect.end, effect.start);
+
+        if (effect.end < effect.start) {
+            var swap = effect.end;
+            effect.end = effect.start;
+            effect.start = swap;
+        }
+
+        if (effect.start < 0) effect.start = 0;
+        if (effect.start > duration) effect.start = duration;
+        if (effect.end < 0) effect.end = 0;
+        if (effect.end > duration) effect.end = duration;
+        if (effect.end < effect.start) effect.end = effect.start;
+
         effect.rect = vec4(effect.rect, [0, 0, VIRTUAL_W, VIRTUAL_H]);
         effect.rectEnd = vec4(effect.rectEnd, effect.rect);
 
@@ -712,11 +760,12 @@
         return effect;
     }
 
+    // Re-sorts the timeline by start frame, the same comparator the engine's
+    // ProjectFile.Normalize uses. Called only after the user changes a span,
+    // never on load: see normalizeProject for why.
     function sortTimeline(p) {
         (p || project).timeline.sort(function (a, b) {
-            if (a.start !== b.start) return a.start - b.start;
-            if (a.end !== b.end) return a.end - b.end;
-            return 0;
+            return a.start - b.start;
         });
     }
 
@@ -1268,6 +1317,14 @@
         if (dom.tlRulerWrap) {
             dom.tlRulerWrap.style.paddingRight = scrollbar + 'px';
         }
+
+        // Let the lane strip fill the viewport so the empty area under the
+        // last track is still a scrub surface.
+        if (scroll && lanes) {
+            var visible = scroll.clientHeight - 22;
+
+            if (visible > 0) lanes.style.minHeight = visible + 'px';
+        }
     }
 
     function layoutBar(effect, index) {
@@ -1285,9 +1342,17 @@
         }
 
         if (entry.label) {
-            var text = effectLabel(effect.type);
-            if (width > 96) text += '  ' + (effect.end - effect.start) + 'f';
+            // A short bar clips its own text mid-word, which reads as a bug.
+            // Below ~52px there is no room for a legible name, so the bar
+            // keeps only its colour and its tooltip.
+            var text = '';
+
+            if (width > 78) text = effectLabel(effect.type) + '  ' + (effect.end - effect.start) + 'f';
+            else if (width > 52) text = effectLabel(effect.type);
+
             setText(entry.label, text);
+            entry.bar.title = effectLabel(effect.type) + ' \u00B7 ' +
+                effect.start + '\u2013' + effect.end + ' (' + (effect.end - effect.start) + 'f)';
         }
     }
 
@@ -1321,8 +1386,15 @@
 
         for (f = 0; f <= project.duration; f += step) {
             var tick = el('div', 'tick');
+            var label = el('span', null, String(f));
+
             tick.style.left = (f * pxPerFrame) + 'px';
-            tick.appendChild(el('span', null, String(f)));
+
+            // The last tick sits exactly on the right edge, where a label to
+            // its right would be clipped by the ruler's overflow:hidden.
+            if ((project.duration - f) * pxPerFrame < 34) label.className = 'tick-end';
+
+            tick.appendChild(label);
             ruler.appendChild(tick);
         }
     }
@@ -1354,10 +1426,15 @@
             x0: x,
             left: rect.left,
             start0: effect ? effect.start : 0,
-            end0: effect ? effect.end : 0
+            end0: effect ? effect.end : 0,
+            // A press that never moves must not dirty the project; the flag
+            // is only raised once the effect's span actually changes.
+            moved: false
         };
 
-        if (effect) selectEffect(effect);
+        // Repainting the whole timeline here would remove the element that
+        // is about to receive the drag, so selection is applied in place.
+        if (effect) selectEffect(effect, true);
 
         if (mode === 'scrub') seekFromPointer(x);
 
@@ -1384,6 +1461,8 @@
         if (!effect) return;
 
         var delta = Math.round((x - drag.x0) / pxPerFrame);
+        var startBefore = effect.start;
+        var endBefore = effect.end;
 
         if (drag.mode === 'move') {
             var length = drag.end0 - drag.start0;
@@ -1396,6 +1475,8 @@
             effect.end = clamp(drag.end0 + delta, effect.start, project.duration);
         }
 
+        if (effect.start !== startBefore || effect.end !== endBefore) drag.moved = true;
+
         layoutBar(effect, indexOfRef(project.timeline, effect));
         renderPreview();
     }
@@ -1404,24 +1485,57 @@
         if (!drag) return;
 
         var mode = drag.mode;
+        var moved = drag.moved;
 
         drag = null;
         document.body.style.cursor = '';
 
-        if (mode !== 'scrub') {
-            sortTimeline();
-            touch();
-            renderTimeline();
-            renderInspector();
-        }
+        if (mode === 'scrub' || !moved) return;
+
+        // Re-sorting after the drag is what keeps the track order equal to
+        // the order the runtime plays, but it renumbers the lanes, so the
+        // whole timeline is rebuilt once here rather than per mousemove.
+        sortTimeline();
+        touch();
+        renderTimeline();
+        renderInspector();
     }
 
     // ------------------------------------------------------------ editing
 
-    function selectEffect(effect) {
+    function selectEffect(effect, inPlace) {
         selection = { kind: 'effect', effect: effect };
-        renderTimeline();
+
+        if (inPlace) markSelection();
+        else renderTimeline();
+
         renderInspector();
+    }
+
+    // Re-applies only the selection classes, for callers that must not
+    // rebuild the timeline (drag start, click-to-select on a bar).
+    function markSelection() {
+        var i;
+
+        for (i = 0; i < project.timeline.length; i++) {
+            var entry = barMap[i];
+
+            if (!entry || !entry.bar) continue;
+
+            var on = isSelectedEffect(project.timeline[i]);
+
+            entry.bar.className = 'tl-bar' + (on ? ' sel' : '');
+        }
+
+        var rows = dom.tlGutter ? dom.tlGutter.childNodes : [];
+
+        for (i = 0; i < rows.length; i++) {
+            if (rows[i].nodeType !== 1) continue;
+
+            var rowOn = isSelectedEffect(project.timeline[i]);
+
+            rows[i].className = 'tl-grow' + (rowOn ? ' sel' : '');
+        }
     }
 
     function selectNode(sceneId, nodeId) {
@@ -1738,15 +1852,15 @@
         return wrap;
     }
 
-    function ctlQuad(values, commit, labels) {
-        var wrap = el('div', 'quad');
+    function ctlQuad(values, commit, labels, wide) {
+        var wrap = el('div', 'quad' + (wide ? ' wide' : ''));
 
         for (var i = 0; i < values.length; i++) {
             (function (index) {
                 var input = document.createElement('input');
 
                 input.className = 'q';
-                input.value = formatNum(values[index]);
+                input.value = formatCompact(values[index]);
 
                 if (labels) input.title = labels[index];
 
@@ -1754,12 +1868,12 @@
                     var parsed = parseFloat(input.value);
 
                     if (!isFinite(parsed)) {
-                        input.value = formatNum(values[index]);
+                        input.value = formatCompact(values[index]);
                         return;
                     }
 
                     values[index] = parsed;
-                    input.value = formatNum(parsed);
+                    input.value = formatCompact(parsed);
                     commit();
                 });
 
@@ -1768,6 +1882,22 @@
         }
 
         return wrap;
+    }
+
+    // Three significant decimals, no trailing zeros: a quaternion component
+    // is 0.30931..., which does not fit in a 33px box and would be clipped
+    // to something that looks like garbage.
+    function formatCompact(value) {
+        var n = parseFloat(value);
+
+        if (!isFinite(n)) return '0';
+        if (n === Math.round(n) && Math.abs(n) < 1e9) return String(n);
+
+        var rounded = Math.round(n * 1000) / 1000;
+
+        if (rounded === Math.round(rounded)) return String(Math.round(rounded));
+
+        return String(rounded);
     }
 
     // ------------------------------------------------------------ effect
@@ -1916,11 +2046,12 @@
     }
 
     function afterTimingEdit(effect) {
+        // A changed span can reorder the timeline, so both the lanes and the
+        // gutter have to be rebuilt; touch() repaints the preview.
         sortTimeline();
         renderTimeline();
         renderInspector();
         touch();
-        renderPreview();
     }
 
     // ------------------------------------------------------------ node
@@ -1956,7 +2087,7 @@
 
         inspectorRow(body, 'Rotation', ctlQuad(node.rotation, function () {
             touch();
-        }, ['x', 'y', 'z', 'w']), 'quaternion; the runtime normalises it');
+        }, ['x', 'y', 'z', 'w'], true), 'quaternion; the runtime normalises it');
 
         inspectorRow(body, 'Scale', ctlQuad(node.scale, function () {
             touch();
@@ -2351,6 +2482,9 @@
         var view = computeView();
         var i;
 
+        placedTags = [];
+        pendingTags = [];
+
         ctx.clearRect(0, 0, canvasW, canvasH);
 
         ctx.fillStyle = '#0B0E14';
@@ -2375,10 +2509,27 @@
             if (!isActive(effect, frame)) continue;
 
             active++;
-            drawEffect(view, effect, i);
+            drawEffect(view, effect);
         }
 
         ctx.restore();
+
+        // Tags are drawn in a second pass, after every effect rectangle has
+        // been filled. An effect drawn later covers an earlier effect's
+        // rectangle - which is correct - but it must not cover the earlier
+        // effect's label, or the preview reads as if that effect is absent.
+        // Still clipped to the frame, so a rect outside 0..800 cannot put
+        // text on the letterbox.
+        if (ctx.beginPath && ctx.rect && ctx.clip) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(view.x, view.y, view.w, view.h);
+            ctx.clip();
+            flushTags();
+            ctx.restore();
+        } else {
+            flushTags();
+        }
 
         // Frame edge: makes the letterbox obvious and shows the aspect the
         // runtime will letterbox to.
@@ -2397,7 +2548,7 @@
             project.fps + ' fps');
     }
 
-    function drawEffect(view, effect, order) {
+    function drawEffect(view, effect) {
         var r = mapRect(effectRect(effect, frame), view);
         var width = r.x2 - r.x1;
         var height = r.y2 - r.y1;
@@ -2410,8 +2561,11 @@
         switch (effect.type) {
             case 'clear':
                 // ClearEffect ignores its rectangle: Device.Clear wipes the
-                // whole target. Reproduce that rather than the rect.
-                ctx.fillStyle = cssColour(effect.colour);
+                // whole target. Reproduce that rather than the rect. The
+                // colour's alpha is dropped because a clear writes the
+                // buffer outright - D3D's Clear ignores alpha, and painting
+                // it transparent here would show the previous frame through.
+                ctx.fillStyle = solidColour(effect.colour);
                 ctx.fillRect(view.x, view.y, view.w, view.h);
                 return;
 
@@ -2430,6 +2584,11 @@
                 clipRect(r, function () {
                     drawFloorGrid(r);
                     drawWireCube(r);
+
+                    // Emitters belong to the scene, so their sparks appear
+                    // here and not at the particles effect - which only
+                    // advances the simulation and draws nothing itself.
+                    if (scene) drawSceneParticles(r, scene, effect, width);
                 });
                 ctx.strokeStyle = 'rgba(124,92,255,0.9)';
                 ctx.lineWidth = 1;
@@ -2502,8 +2661,12 @@
                 return;
 
             case 'particles':
-                drawParticles(r, intOr(effect.scene, 0) * 977 + order * 31, frame);
-                drawTag(r.x1 + 4, r.y1 + 4, 'PARTICLES', width - 8);
+                // ParticleEffect.Draws is false: it advances a scene's
+                // emitters and the 3D pass draws the results. Draw the hint
+                // only where it would be visible, i.e. before display3d
+                // covers it, and label it as a state change.
+                dashedRect(r, 'rgba(240,192,64,0.55)');
+                drawTag(r.x1 + 4, r.y1 + 4, 'PARTICLES \u00B7 STATE', width - 8);
                 return;
 
             default:
@@ -2537,19 +2700,62 @@
         if (ctx.setLineDash) ctx.setLineDash([]);
     }
 
+    // Effects draw in timeline order, so a later full-frame effect would
+    // bury an earlier effect's label. Walk down past any label already
+    // placed in this frame instead of letting them stack on one pixel.
+    function placeTag(x, y, width) {
+        var top = y;
+        var guard = 0;
+
+        while (overlapsTag(x, top, width) && guard < 10) {
+            top += 15;
+            guard++;
+        }
+
+        return top;
+    }
+
     function drawTag(x, y, text, maxWidth) {
         if (maxWidth < 26) return;
 
+        pendingTags.push({ x: x, y: y, text: text, maxWidth: maxWidth });
+    }
+
+    function flushTags() {
+        for (var i = 0; i < pendingTags.length; i++) {
+            paintTag(pendingTags[i]);
+        }
+
+        pendingTags = [];
+    }
+
+    function paintTag(tag) {
         ctx.font = '10px Consolas, "Lucida Console", "Courier New", monospace';
 
-        var width = ctx.measureText ? ctx.measureText(text).width + 8 : text.length * 6 + 8;
+        var width = ctx.measureText ? ctx.measureText(tag.text).width + 8 : tag.text.length * 6 + 8;
 
-        if (width > maxWidth) return;
+        if (width > tag.maxWidth) return;
+
+        var top = placeTag(tag.x, tag.y, width);
+
+        placedTags.push({ x: tag.x, y: top, w: width });
 
         ctx.fillStyle = 'rgba(0,0,0,0.62)';
-        ctx.fillRect(x, y, width, 14);
+        ctx.fillRect(tag.x, top, width, 14);
         ctx.fillStyle = '#E6ECF7';
-        ctx.fillText(text, x + 4, y + 10);
+        ctx.fillText(tag.text, tag.x + 4, top + 10);
+    }
+
+    function overlapsTag(x, y, width) {
+        for (var i = 0; i < placedTags.length; i++) {
+            var tag = placedTags[i];
+
+            if (y < tag.y + 15 && y + 15 > tag.y && x < tag.x + tag.w && x + width > tag.x) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // A perspective floor and a horizon, which is enough to read "camera
@@ -2666,16 +2872,16 @@
         ctx.stroke();
     }
 
-    function drawParticles(r, seed, f) {
+    function drawParticles(r, seed, f, colour, count) {
         var width = r.x2 - r.x1;
         var height = r.y2 - r.y1;
         var state = ((seed | 0) ^ ((f + 1) * 2654435761)) | 0;
-        var count = 48;
+        var total = count || 48;
         var i;
 
         if (state === 0) state = 1;
 
-        for (i = 0; i < count; i++) {
+        for (i = 0; i < total; i++) {
             // xorshift32, the same generator the emitter uses.
             state ^= state << 13;
             state ^= state >>> 17;
@@ -2691,7 +2897,7 @@
             var py = r.y1 + ry * height;
             var radius = 0.6 + (1 - ry) * 1.6;
 
-            ctx.fillStyle = 'rgba(240,200,80,' + (0.25 + (1 - ry) * 0.6) + ')';
+            ctx.fillStyle = colour || ('rgba(240,200,80,' + (0.25 + (1 - ry) * 0.6) + ')');
             ctx.beginPath();
 
             if (ctx.arc) {
@@ -2700,6 +2906,41 @@
             } else {
                 ctx.fillRect(px, py, radius * 2, radius * 2);
             }
+        }
+    }
+
+    // Draws the sparks of every emitter in the scene, using the emitter's
+    // own start/end colours so a project that recolours its sparks shows it.
+    function drawSceneParticles(r, scene, effect, width) {
+        var emitterCount = 0;
+        var i;
+
+        for (i = 0; i < scene.nodes.length; i++) {
+            if (scene.nodes[i].emitter) emitterCount++;
+        }
+
+        if (!emitterCount) return;
+
+        var index = 0;
+
+        for (i = 0; i < scene.nodes.length; i++) {
+            var node = scene.nodes[i];
+
+            if (!node.emitter) continue;
+
+            var progress = effectProgress(effect, frame);
+            var colour = lerpColour(
+                str(node.emitter.startColour) || '#96DCFFFF',
+                str(node.emitter.endColour) || '#005AFF00',
+                progress * 0.35);
+
+            // One emitter is drawn larger than many, so a scene with several
+            // does not turn into a solid field of dots.
+            drawParticles(r, (intOr(node.emitter.seed, 12345) + index * 7919),
+                frame, colourCssFromRgba(colour, emitterCount > 1 ? 0.6 : 0.95),
+                emitterCount > 1 ? 24 : 48);
+
+            index++;
         }
     }
 
@@ -2778,13 +3019,13 @@
 
         playing = false;
 
-        // Only one of the two is ever live: rAF leaves tickHandle null and
-        // the timeout path leaves rafId null.
+        // Exactly one of the two handles is live: the rAF path never sets
+        // tickHandle and the timeout path never sets rafId.
         if (rafId !== null && cancelRaf) cancelRaf(rafId);
         else if (tickHandle !== null) window.clearTimeout(tickHandle);
 
-        tickHandle = null;
         rafId = null;
+        tickHandle = null;
 
         updateTransport();
     }
@@ -2953,6 +3194,10 @@
     }
 
     function applyProject(raw) {
+        // Stop any playback first, so a scheduled frame cannot paint over
+        // the project that is about to replace it.
+        pause();
+
         project = normalizeProject(raw);
 
         frame = 0;
@@ -3263,6 +3508,15 @@
             beginDrag('scrub', null, event || window.event);
         });
 
+        // Clicking the empty strip below the last track scrubs too; only the
+        // container itself, since clicks on a lane are handled per lane.
+        on(dom.tlLanes, 'mousedown', function (event) {
+            var e = event || window.event;
+            var target = e && (e.target || e.srcElement);
+
+            if (target === dom.tlLanes) beginDrag('scrub', null, e);
+        });
+
         on(document, 'mousemove', handleDragMove);
         on(document, 'mouseup', endDrag);
         on(window, 'blur', endDrag);
@@ -3345,6 +3599,7 @@
         dom.tree = $('tree');
         dom.preview = $('preview');
         dom.previewFrame = $('previewFrame');
+        dom.previewNote = $('previewNote');
         dom.hudLeft = $('hudLeft');
         dom.hudRight = $('hudRight');
 
@@ -3393,7 +3648,7 @@
         detectNoVars();
         detectCapabilities();
 
-        document.title = BRAND_NAME + ' Editor';
+        document.title = BRAND_TITLE + ' \u2014 Editor';
 
         if (dom.brandName) setText(dom.brandName, BRAND_NAME);
         if (dom.brandSub) {
@@ -3451,6 +3706,10 @@
         setFrame: function (value) { setFrame(value); },
         frame: function () { return frame; },
         setTheme: function (name) { setTheme(name); },
+        // The same helper the page uses for host->page navigation, exposed so
+        // a host-injected script can raise a verb without duplicating the
+        // payload handshake.
+        hostCall: function (verb, payload) { hostCall(verb, payload); },
         version: BRAND_VERSION
     };
 

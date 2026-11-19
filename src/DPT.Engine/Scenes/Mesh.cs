@@ -61,6 +61,16 @@ namespace DPT.Engine.Scenes
         public int PrimitiveSegments = 16;
         public int PrimitiveRings = 8;
 
+        /// <summary>
+        /// How many times the texture repeats across the primitive.
+        ///
+        /// Stored separately from the vertex data because a primitive mesh is saved
+        /// as its recipe, not as baked vertices: without this a tiled floor comes
+        /// back from a save with one texture repeat stretched over the whole surface,
+        /// which is how the template's grid disappeared on reload.
+        /// </summary>
+        public float TextureScale = 1f;
+
         /// <summary>Axis-aligned bounds in local space, used for culling.</summary>
         public Vector3 BoundsMin;
         public Vector3 BoundsMax;
@@ -152,11 +162,15 @@ namespace DPT.Engine.Scenes
         /// </summary>
         public void ScaleTextureCoordinates(float factor)
         {
+            if (factor <= 0f || !MathHelper.IsFinite(factor)) return;
+
             for (var i = 0; i < Vertices.Length; i++)
             {
                 Vertices[i].TextureCoordinate.X *= factor;
                 Vertices[i].TextureCoordinate.Y *= factor;
             }
+
+            TextureScale *= factor;
         }
 
         /// <summary>

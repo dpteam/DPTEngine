@@ -65,6 +65,12 @@ namespace DPT.Engine
                     continue;
                 }
 
+                if (argument.StartsWith("--project=", StringComparison.OrdinalIgnoreCase))
+                {
+                    projectPath = argument.Substring("--project=".Length);
+                    continue;
+                }
+
                 if (string.Equals(argument, "--help", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(argument, "-h", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(argument, "/?", StringComparison.Ordinal))
@@ -91,7 +97,7 @@ namespace DPT.Engine
 
             if (headless)
             {
-                return Headless.Run();
+                return Headless.Run(projectPath);
             }
 
             using (var app = new EngineApp(projectPath))
@@ -118,7 +124,8 @@ namespace DPT.Engine
             Console.WriteLine();
             Console.WriteLine("Usage:");
             Console.WriteLine("  dptengine [project]            play a project (or the built-in template)");
-            Console.WriteLine("  dptengine --headless           run the self-test without a window");
+            Console.WriteLine("  dptengine --headless           verify a project without a window");
+            Console.WriteLine("  dptengine --project=FILE       the project to play or verify");
             Console.WriteLine("  dptengine --log-level=LEVEL    verbose, info, warning or error");
             Console.WriteLine();
             Console.WriteLine("Keys:");

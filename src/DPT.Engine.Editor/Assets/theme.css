@@ -211,7 +211,7 @@ img {
     left: 0;
     top: 0;
     width: 214px;
-    height: 57px;
+    height: 58px;
     border-right: 1px solid #D9E3F0;
     border-right-color: var(--brand-border);
 }
@@ -351,6 +351,17 @@ img {
 }
 
 /* ------------------------------------------------------------ controls */
+
+/* Inputs are sized with width:100% in the inspector, so they must measure
+   their padding and border inside that width; content-box overflows the
+   panel by 12px on every row. */
+.ctl,
+.quad .q,
+.colctl input[type="color"],
+.modal-body textarea {
+    -ms-box-sizing: border-box;
+    box-sizing: border-box;
+}
 
 .ctl {
     height: 22px;
@@ -889,6 +900,13 @@ select.ctl {
     white-space: nowrap;
 }
 
+/* Right-align the label of a tick near the right edge, so it grows leftward
+   into the ruler instead of being clipped. */
+.tick span.tick-end {
+    left: auto;
+    right: 3px;
+}
+
 .tl-scroll {
     position: absolute;
     left: 0;
@@ -959,6 +977,10 @@ select.ctl {
 .tl-lanes {
     position: relative;
     margin-left: 128px;
+    /* Filled in by app.js to the visible height of the scroll area, so a
+       click below the last track still scrubs instead of hitting dead
+       space. */
+    min-height: 40px;
 }
 
 .tl-lane {
@@ -1163,8 +1185,12 @@ select.ctl {
     box-sizing: border-box;
 }
 
+/* The rotation row holds four quaternion components in the same width as a
+   three-component vector, so its boxes are sized to keep "-0.207" legible
+   without wrapping onto a second line. */
 .quad.wide .q {
-    width: 51px;
+    width: 39px;
+    font-size: 9px;
 }
 
 .quad .q:focus {
@@ -1406,51 +1432,53 @@ select.ctl {
 /* =====================================================================
    No-custom-property fallback.
 
-   app.js probes for CSS variable support and adds .no-vars to <html>
-   only when the probe fails. These rules therefore never apply in a
-   browser that understands the blocks above, so they cannot fight the
-   branding overrides. Only the two non-default themes need entries:
-   light is already the literal value written into every rule.
+   app.js probes for CSS-variable support and adds .no-vars to <html> only
+   when the probe fails, so these rules never apply in a browser that
+   understands the blocks above, and cannot fight a spliced brand palette.
+
+   The section exists because MSHTML drops any declaration whose value is
+   a var() it does not understand, leaving whatever literal came before
+   it. Light needs nothing here - every rule already carries its light
+   value first. Dark and OLED have to restate the surfaces and, crucially,
+   the text colours: many components (.panel, .menu-item, .kv .v, .tbtn)
+   declare their own `color`, so an inherited light colour from .app would
+   never reach them and they would render dark-on-black.
    ===================================================================== */
 
-.no-vars body.dark,
-.no-vars body.oled {
+/* ---------------------------------------------------------------- dark */
+
+.no-vars body.dark {
     background: #000000;
     color: #E8ECF5;
 }
 
-.no-vars body.oled {
-    color: #FFFFFF;
-}
-
-.no-vars body.dark .app,
-.no-vars body.oled .app {
+.no-vars body.dark .app {
     background: #000000;
     color: #E8ECF5;
 }
 
-.no-vars body.oled .app {
-    color: #FFFFFF;
-}
+/* Surfaces ------------------------------------------------------------ */
 
 .no-vars body.dark .topbar,
+.no-vars body.dark .brand,
 .no-vars body.dark .panel,
 .no-vars body.dark .timeline,
 .no-vars body.dark .statusbar,
+.no-vars body.dark .tl-toolbar,
+.no-vars body.dark .tl-head,
 .no-vars body.dark .tl-grow,
 .no-vars body.dark .sec-head {
     background: #07070F;
     border-color: #1A1A3C;
 }
 
-.no-vars body.oled .topbar,
-.no-vars body.oled .panel,
-.no-vars body.oled .timeline,
-.no-vars body.oled .statusbar,
-.no-vars body.oled .tl-grow,
-.no-vars body.oled .sec-head {
-    background: #000000;
-    border-color: #1E1E1E;
+.no-vars body.dark .tl-scroll,
+.no-vars body.dark .stage,
+.no-vars body.dark .note,
+.no-vars body.dark .modal-box,
+.no-vars body.dark .tl-gutter {
+    background: #04040A;
+    border-color: #1A1A3C;
 }
 
 .no-vars body.dark .ctl,
@@ -1462,7 +1490,129 @@ select.ctl {
 .no-vars body.dark .mini {
     background: #0C0C18;
     border-color: #1A1A3C;
+}
+
+/* Primary stays blue: it is the save action, and a grey primary reads as
+   disabled. Declared after the generic .btn rule so it wins. */
+.no-vars body.dark .btn.primary,
+.no-vars body.dark .tbtn.on {
+    background: #000088;
+    border-color: #0000AA;
+    color: #FFFFFF;
+}
+
+/* Foreground ---------------------------------------------------------- */
+
+.no-vars body.dark .brand-name,
+.no-vars body.dark .panel,
+.no-vars body.dark .tbtn,
+.no-vars body.dark .ctl,
+.no-vars body.dark .btn,
+.no-vars body.dark .tl-frame,
+.no-vars body.dark .menu-item,
+.no-vars body.dark .quad .q,
+.no-vars body.dark .kv .v,
+.no-vars body.dark .modal-body textarea,
+.no-vars body.dark .tree-row,
+.no-vars body.dark .tl-grow {
     color: #E8ECF5;
+}
+
+.no-vars body.dark .dim,
+.no-vars body.dark .empty,
+.no-vars body.dark .ilabel,
+.no-vars body.dark .kv,
+.no-vars body.dark .ihint,
+.no-vars body.dark .tl-corner,
+.no-vars body.dark .panel-head,
+.no-vars body.dark .tl-title,
+.no-vars body.dark .tl-empty,
+.no-vars body.dark .sec-head,
+.no-vars body.dark .brand-sub,
+.no-vars body.dark .field > label,
+.no-vars body.dark .field .x,
+.no-vars body.dark .field .unit,
+.no-vars body.dark .twisty,
+.no-vars body.dark .glyph,
+.no-vars body.dark .tree-id,
+.no-vars body.dark .tree-kind,
+.no-vars body.dark .tick span,
+.no-vars body.dark .g-num,
+.no-vars body.dark .mi-type,
+.no-vars body.dark .menu-head,
+.no-vars body.dark .statusbar,
+.no-vars body.dark .modal-head,
+.no-vars body.dark .mini {
+    color: #8B92B4;
+}
+
+.no-vars body.dark .tree-row.sel,
+.no-vars body.dark .tree-row.sel .twisty,
+.no-vars body.dark .tree-row.sel .tree-id,
+.no-vars body.dark .tree-row.sel .tree-kind {
+    color: #FFFFFF;
+}
+
+/* Rules and edges ----------------------------------------------------- */
+
+.no-vars body.dark .tl-lane,
+.no-vars body.dark .tl-grow,
+.no-vars body.dark .sec,
+.no-vars body.dark .irow,
+.no-vars body.dark .tick,
+.no-vars body.dark .tree-sep {
+    border-color: #1A1A3C;
+}
+
+.no-vars body.dark .tl-grow.sel {
+    background: #101028;
+    box-shadow: inset 2px 0 0 #3B3BD6;
+}
+
+.no-vars body.dark .tl-playhead {
+    background: #3B3BD6;
+}
+
+.no-vars body.dark .ph-head {
+    border-top-color: #3B3BD6;
+}
+
+.no-vars body.dark .note {
+    border-left-color: #000088;
+}
+
+/* ---------------------------------------------------------------- oled */
+
+.no-vars body.oled {
+    background: #000000;
+    color: #FFFFFF;
+}
+
+.no-vars body.oled .app {
+    background: #000000;
+    color: #FFFFFF;
+}
+
+.no-vars body.oled .topbar,
+.no-vars body.oled .brand,
+.no-vars body.oled .panel,
+.no-vars body.oled .timeline,
+.no-vars body.oled .statusbar,
+.no-vars body.oled .tl-toolbar,
+.no-vars body.oled .tl-head,
+.no-vars body.oled .tl-grow,
+.no-vars body.oled .sec-head {
+    background: #000000;
+    border-color: #1E1E1E;
+}
+
+.no-vars body.oled .tl-scroll,
+.no-vars body.oled .stage,
+.no-vars body.oled .note,
+.no-vars body.oled .modal-box,
+.no-vars body.oled .tl-gutter {
+    background: #000000;
+    border-color: #1E1E1E;
 }
 
 .no-vars body.oled .ctl,
@@ -1474,57 +1624,87 @@ select.ctl {
 .no-vars body.oled .mini {
     background: #070707;
     border-color: #1E1E1E;
+}
+
+.no-vars body.oled .btn.primary,
+.no-vars body.oled .tbtn.on {
+    background: #0088FF;
+    border-color: #0080FF;
     color: #FFFFFF;
 }
 
-.no-vars body.dark .tl-scroll,
-.no-vars body.dark .stage,
-.no-vars body.dark .note,
-.no-vars body.dark .modal-box {
-    background: #04040A;
-    border-color: #1A1A3C;
-}
-
-.no-vars body.oled .tl-scroll,
-.no-vars body.oled .stage,
-.no-vars body.oled .note,
-.no-vars body.oled .modal-box {
-    background: #000000;
-    border-color: #1E1E1E;
-}
-
-.no-vars body.dark .dim,
-.no-vars body.dark .ilabel,
-.no-vars body.dark .kv,
-.no-vars body.dark .ihint,
-.no-vars body.dark .tl-corner,
-.no-vars body.dark .panel-head,
-.no-vars body.dark .tl-title,
-.no-vars body.dark .sec-head {
-    color: #8B92B4;
+.no-vars body.oled .brand-name,
+.no-vars body.oled .panel,
+.no-vars body.oled .tbtn,
+.no-vars body.oled .ctl,
+.no-vars body.oled .btn,
+.no-vars body.oled .tl-frame,
+.no-vars body.oled .menu-item,
+.no-vars body.oled .quad .q,
+.no-vars body.oled .kv .v,
+.no-vars body.oled .modal-body textarea,
+.no-vars body.oled .tree-row,
+.no-vars body.oled .tl-grow {
+    color: #FFFFFF;
 }
 
 .no-vars body.oled .dim,
+.no-vars body.oled .empty,
 .no-vars body.oled .ilabel,
 .no-vars body.oled .kv,
 .no-vars body.oled .ihint,
 .no-vars body.oled .tl-corner,
 .no-vars body.oled .panel-head,
 .no-vars body.oled .tl-title,
-.no-vars body.oled .sec-head {
+.no-vars body.oled .tl-empty,
+.no-vars body.oled .sec-head,
+.no-vars body.oled .brand-sub,
+.no-vars body.oled .field > label,
+.no-vars body.oled .field .x,
+.no-vars body.oled .field .unit,
+.no-vars body.oled .twisty,
+.no-vars body.oled .glyph,
+.no-vars body.oled .tree-id,
+.no-vars body.oled .tree-kind,
+.no-vars body.oled .tick span,
+.no-vars body.oled .g-num,
+.no-vars body.oled .mi-type,
+.no-vars body.oled .menu-head,
+.no-vars body.oled .statusbar,
+.no-vars body.oled .modal-head,
+.no-vars body.oled .mini {
     color: #9098A8;
 }
 
-.no-vars body.dark .tl-lane,
-.no-vars body.dark .tl-grow,
-.no-vars body.dark .sec,
-.no-vars body.dark .irow {
-    border-color: #1A1A3C;
+.no-vars body.oled .tree-row.sel,
+.no-vars body.oled .tree-row.sel .twisty,
+.no-vars body.oled .tree-row.sel .tree-id,
+.no-vars body.oled .tree-row.sel .tree-kind {
+    color: #FFFFFF;
 }
 
 .no-vars body.oled .tl-lane,
 .no-vars body.oled .tl-grow,
 .no-vars body.oled .sec,
-.no-vars body.oled .irow {
+.no-vars body.oled .irow,
+.no-vars body.oled .tick,
+.no-vars body.oled .tree-sep {
     border-color: #1E1E1E;
+}
+
+.no-vars body.oled .tl-grow.sel {
+    background: #0E0E0E;
+    box-shadow: inset 2px 0 0 #0088FF;
+}
+
+.no-vars body.oled .tl-playhead {
+    background: #0088FF;
+}
+
+.no-vars body.oled .ph-head {
+    border-top-color: #0088FF;
+}
+
+.no-vars body.oled .note {
+    border-left-color: #0088FF;
 }

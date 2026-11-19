@@ -28,7 +28,8 @@
     <ProjectReference Include="..\..\src\DPT.Engine.Shared\DPT.Engine.Shared.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
+  <!-- System.Core is implicit on modern targets and only needed for net40. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net40'">
     <Reference Include="System.Core" />
   </ItemGroup>
 

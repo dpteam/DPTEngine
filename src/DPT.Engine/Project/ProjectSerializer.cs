@@ -383,6 +383,7 @@ namespace DPT.Engine.Project
             json.Set("size", mesh.PrimitiveSize);
             json.Set("segments", mesh.PrimitiveSegments);
             json.Set("rings", mesh.PrimitiveRings);
+            json.Set("uvScale", mesh.TextureScale);
 
             if (mesh.Primitive == MeshPrimitive.Custom)
             {
@@ -418,21 +419,38 @@ namespace DPT.Engine.Project
             var size = json["size"].AsFloat(2f);
             var segments = json["segments"].AsInt(16);
             var rings = json["rings"].AsInt(8);
+            var uvScale = json["uvScale"].AsFloat(1f);
+
+            Mesh mesh;
 
             switch (primitive.ToLowerInvariant())
             {
                 case "sphere":
-                    return Mesh.CreateSphere(size * 0.5f, segments, rings);
+                    mesh = Mesh.CreateSphere(size * 0.5f, segments, rings);
+                    break;
 
                 case "plane":
-                    return Mesh.CreatePlane(size, size, Math.Max(1, segments / 4));
+                    mesh = Mesh.CreatePlane(size, size, Math.Max(1, segments / 4));
+                    break;
 
                 case "custom":
-                    return ReadCustomMesh(json);
+                    mesh = ReadCustomMesh(json);
+                    break;
 
                 default:
-                    return Mesh.CreateBox(size);
+                    mesh = Mesh.CreateBox(size);
+                    break;
             }
+
+            // Re-apply the tiling the primitive was authored with. A primitive is
+            // saved as its recipe, so anything that is not a constructor parameter
+            // has to be restored explicitly.
+            if (uvScale > 0f && Math.Abs(uvScale - 1f) > 1e-6f)
+            {
+                mesh.ScaleTextureCoordinates(uvScale);
+            }
+
+            return mesh;
         }
 
         private static Mesh ReadCustomMesh(JsonValue json)
